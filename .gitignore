@@ -1,0 +1,56 @@
+# Virtual environment
+./backend/.venv/
+./frontend/.venv/
+.env/
+venv/
+# Byte-compiled / optimized / compiled files
+./backend/__pycache__/
+*.pyc
+*.pyd
+*.pyo
+# Editor/IDE specific files
+.idea/  # PyCharm
+.vscode/ # VS Code
+*.sublime-project
+*.sublime-workspace
+# Logs and databases
+*.log
+*.sqlite3
+*.db
+# Environment variables
+./backend/.env
+./frontend/.env
+.flaskenv
+# Testing artifacts
+.pytest_cache/
+htmlcov/
+.coverage
+# Build artifacts
+dist/
+build/
+*.egg-info/
+# Operating System files
+.DS_Store # macOS
+Thumbs.db # Windows
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+node_modules
+dist
+dist-ssr
+*.local
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
