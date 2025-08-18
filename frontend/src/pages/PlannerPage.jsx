@@ -1,184 +1,494 @@
-import React, { useState } from 'react';
+import { useState, useEffect, useContext, useRef } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import Header from '../components/Header';
 import LanguageSelector from '../components/LanguageSelector';
 import TaskList from '../components/TaskList';
 import MoodBadge from '../components/MoodBadge';
+import CustomSubjectForm from '../components/CustomSubjectForm';
 import { useUser } from '../context/UserContext';
-import { getMicroPlan } from '../api';
-import { FaPlus, FaRegLightbulb } from 'react-icons/fa';
+import { AuthContext } from '../context/AuthContext';
+import { createPlan, getUserPlans } from '../api';
+import { FaPlus, FaRegLightbulb, FaFilter, FaTags } from 'react-icons/fa';
+import toast from 'react-hot-toast';
 
 const PlannerPage = () => {
-  const { user, updateUserPreferences } = useUser();
-  const [duration, setDuration] = useState(30);
-  const [context, setContext] = useState('');
+  const { user: userPrefs, updateUserPreferences } = useUser();
+  const { user } = useContext(AuthContext);
+  const [tasks, setTasks] = useState([]);
+  const [newTask, setNewTask] = useState({
+    title: '',
+    description: '',
+    category: 'study',
+    duration_minutes: 30,
+  });
   const [isLoading, setIsLoading] = useState(false);
-  const [plan, setPlan] = useState(null);
-  const [error, setError] = useState(null);
+  const [isCreating, setIsCreating] = useState(false);
+  const [filterStatus, setFilterStatus] = useState('all');
+  const [filterCategory, setFilterCategory] = useState('all');
+  const [showCustomSubjectForm, setShowCustomSubjectForm] = useState(false);
+  const [selectedCustomCategory, setSelectedCustomCategory] = useState('study');
+  const remindedRef = useRef({}); // planId -> true
 
-  const handleLanguageChange = (language) => {
-    updateUserPreferences({ language });
-  };
+  const language = userPrefs?.language || 'english';
 
-  const handleCreatePlan = async () => {
-    setIsLoading(true);
-    setError(null);
-    
+  // Fetch user plans when component mounts
+  useEffect(() => {
+    if (user) {
+      fetchUserPlans();
+    }
+  }, [user]);
+
+  // Ask for Notification permission once
+  useEffect(() => {
     try {
-      // Use neutral mood if just planning, or use the last mood from history if available
-      const mood = user.moodHistory && user.moodHistory.length > 0 
-        ? user.moodHistory[0].mood 
-        : 'neutral';
-      
-      const planData = await getMicroPlan(mood, user.language, context, duration);
-      
-      setPlan({
-        type: 'plan',
-        content: planData.plan_text,
-        mood: planData.mood,
-        tasks: planData.tasks
+      if ('Notification' in window && Notification.permission === 'default') {
+        Notification.requestPermission().catch(() => {});
+      }
+    } catch (_) {}
+  }, []);
+
+  // Lightweight reminder: toast when scheduled_time is reached
+  useEffect(() => {
+    if (!tasks || tasks.length === 0) return;
+    const timer = setInterval(() => {
+      const now = new Date();
+      const hh = String(now.getHours()).padStart(2, '0');
+      const mm = String(now.getMinutes()).padStart(2, '0');
+      const current = `${hh}:${mm}`;
+      tasks.forEach((t) => {
+        if (!t || !t.scheduled_time || remindedRef.current[t.id]) return;
+        const st = typeof t.scheduled_time === 'string' ? t.scheduled_time : '';
+        if (!st) return;
+        // Trigger when exact minute matches and task is actionable
+        if ((t.status === 'pending' || t.status === 'in_progress') && st === current) {
+          remindedRef.current[t.id] = true;
+          try {
+            // Toast reminder (non-blocking)
+            // eslint-disable-next-line no-undef
+            toast?.(`It's time: ${t.title}`, { icon: '⏰' });
+            if ('Notification' in window && Notification.permission === 'granted') {
+              const cat = (t.category || 'Task').toString();
+              const body = `${cat.toUpperCase()} • ${t.duration_minutes} min`;
+              new Notification('Time to start', { body });
+            }
+          } catch (_) {}
+        }
       });
-      
-    } catch (err) {
-      console.error('Error creating plan:', err);
-      setError('Something went wrong. Please try again.');
+    }, 30000); // check every 30s
+    return () => clearInterval(timer);
+  }, [tasks]);
+
+  const fetchUserPlans = async () => {
+    setIsLoading(true);
+    try {
+      const response = await getUserPlans();
+      setTasks(response.plans || []);
+    } catch (error) {
+      console.error('Error fetching plans:', error);
+      toast.error('Failed to load your tasks. Please try again.');
     } finally {
       setIsLoading(false);
     }
   };
 
-  const titleText = {
-    english: "Micro Planner",
-    hindi: "माइक्रो प्लानर",
-    gujarati: "માઇક્રો પ્લાનર"
+  // Handle language change
+  const handleLanguageChange = (newLanguage) => {
+    updateUserPreferences({ language: newLanguage });
   };
 
-  const subtitleText = {
-    english: "Small steps to keep you going",
-    hindi: "आपको चलते रहने के लिए छोटे कदम",
-    gujarati: "તમને આગળ વધતા રાખવા માટે નાના પગલાં"
+  // Toggle task creation form
+  const toggleCreateTask = () => {
+    setIsCreating(!isCreating);
+    // Reset form if closing
+    if (isCreating) {
+      setNewTask({
+        title: '',
+        description: '',
+        category: 'study',
+        duration_minutes: 30,
+      });
+      setShowCustomSubjectForm(false);
+    }
+  };
+  
+  // Toggle custom subject form
+  const toggleCustomSubjectForm = () => {
+    setShowCustomSubjectForm(!showCustomSubjectForm);
+    if (!showCustomSubjectForm) {
+      // Set the selected category to the current task category
+      setSelectedCustomCategory(newTask.category);
+    }
   };
 
-  const contextPlaceholder = {
-    english: "What subject are you working on? (e.g., Math, Programming)",
-    hindi: "आप किस विषय पर काम कर रहे हैं? (जैसे, गणित, प्रोग्रामिंग)",
-    gujarati: "તમે કયા વિષય પર કામ કરી રહ્યા છો? (દા.ત., ગણિત, પ્રોગ્રામિંગ)"
+  // Handle input changes for new task
+  const handleInputChange = (e) => {
+    const { name, value } = e.target;
+    setNewTask({
+      ...newTask,
+      [name]: name === 'duration_minutes' ? parseInt(value) : value
+    });
+    
+    // If category changes, update the selected custom category
+    if (name === 'category') {
+      setSelectedCustomCategory(value);
+    }
   };
 
-  const buttonText = {
-    english: "Create Plan",
-    hindi: "योजना बनाएं",
-    gujarati: "યોજના બનાવો"
+  // Submit new task
+  const handleSubmitTask = async (e) => {
+    e.preventDefault();
+    
+    if (!newTask.title.trim()) {
+      toast.error('Please enter a task title.');
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      await createPlan({
+        ...newTask,
+        status: 'pending'
+      });
+      
+      toast.success('Task created successfully!');
+      setIsCreating(false);
+      
+      // Reset form
+      setNewTask({
+        title: '',
+        description: '',
+        category: 'study',
+        duration_minutes: 30,
+      });
+      
+      // Refresh tasks
+      fetchUserPlans();
+    } catch (error) {
+      console.error('Error creating task:', error);
+      toast.error('Failed to create task. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
   };
+
+  // Filter tasks
+  const getFilteredTasks = () => {
+    let filtered = [...tasks];
+    
+    if (filterStatus !== 'all') {
+      filtered = filtered.filter(task => task.status === filterStatus);
+    }
+    
+    if (filterCategory !== 'all') {
+      filtered = filtered.filter(task => task.category === filterCategory);
+    }
+    
+    return filtered;
+  };
+
+  // Localized strings
+  const strings = {
+    english: {
+      title: "Task Planner",
+      createTask: "Create Task",
+      taskTitle: "Task Title",
+      description: "Description",
+      category: "Category",
+      duration: "Duration (minutes)",
+      create: "Create",
+      cancel: "Cancel",
+      filterBy: "Filter by",
+      allTasks: "All Tasks",
+      allCategories: "All Categories",
+      loading: "Loading tasks...",
+      study: "Study",
+      work: "Work",
+      personal: "Personal",
+      other: "Other",
+      pending: "Pending",
+      inProgress: "In Progress",
+      completed: "Completed",
+      cancelled: "Cancelled",
+      customTasks: "Manage Custom Tasks",
+      hideCustomTasks: "Hide Custom Tasks"
+    },
+    hindi: {
+      title: "कार्य योजनाकार",
+      createTask: "कार्य बनाएं",
+      taskTitle: "कार्य शीर्षक",
+      description: "विवरण",
+      category: "श्रेणी",
+      duration: "अवधि (मिनट)",
+      create: "बनाएं",
+      cancel: "रद्द करें",
+      filterBy: "फ़िल्टर करें",
+      allTasks: "सभी कार्य",
+      allCategories: "सभी श्रेणियां",
+      loading: "कार्य लोड हो रहे हैं...",
+      study: "अध्ययन",
+      work: "काम",
+      personal: "व्यक्तिगत",
+      other: "अन्य",
+      pending: "लंबित",
+      inProgress: "प्रगति पर",
+      completed: "पूर्ण",
+      cancelled: "रद्द",
+      customTasks: "अनुकूलित कार्य प्रबंधित करें",
+      hideCustomTasks: "अनुकूलित कार्य छिपाएं"
+    },
+    gujarati: {
+      title: "કાર્ય યોજનાકાર",
+      createTask: "કાર્ય બનાવો",
+      taskTitle: "કાર્ય શીર્ષક",
+      description: "વર્ણન",
+      category: "શ્રેણી",
+      duration: "સમયગાળો (મિનિટ)",
+      create: "બનાવો",
+      cancel: "રદ કરો",
+      filterBy: "ફિલ્ટર કરો",
+      allTasks: "બધા કાર્યો",
+      allCategories: "બધી શ્રેણીઓ",
+      loading: "કાર્યો લોડ થઈ રહ્યા છે...",
+      study: "અભ્યાસ",
+      work: "કામ",
+      personal: "વ્યક્તિગત",
+      other: "અન્ય",
+      pending: "બાકી",
+      inProgress: "પ્રગતિમાં",
+      completed: "પૂર્ણ",
+      cancelled: "રદ થયેલ",
+      customTasks: "કસ્ટમ કાર્યો મેનેજ કરો",
+      hideCustomTasks: "કસ્ટમ કાર્યો છુપાવો"
+    }
+  };
+
+  const t = strings[language] || strings.english;
 
   return (
-    <div className="max-w-md mx-auto px-4 py-8 pb-20">
-      <div className="flex justify-end mb-4">
-        <LanguageSelector 
-          currentLanguage={user.language} 
-          onLanguageChange={handleLanguageChange} 
-        />
-      </div>
-      
-      <Header 
-        title={titleText[user.language] || titleText.english} 
-        subtitle={subtitleText[user.language] || subtitleText.english} 
-      />
-      
-      <div className="bg-white rounded-lg shadow p-4 mb-6">
-        <div className="mb-4">
-          <label htmlFor="context" className="block text-sm font-medium text-gray-700 mb-1">
-            {contextPlaceholder[user.language] || contextPlaceholder.english}
-          </label>
-          <input
-            type="text"
-            id="context"
-            value={context}
-            onChange={(e) => setContext(e.target.value)}
-            className="w-full p-2 border rounded focus:ring-2 focus:ring-pink-200 focus:border-pink-300"
+    <div className="container mx-auto px-4 pb-20 pt-4">
+      <Header title={t.title} />
+
+      <div className="mb-6 flex flex-col md:flex-row md:items-center md:justify-between">
+        <div className="mb-4 md:mb-0">
+          <LanguageSelector 
+            language={language}
+            onChange={handleLanguageChange}
           />
         </div>
-        
-        <div className="mb-4">
-          <label htmlFor="duration" className="block text-sm font-medium text-gray-700 mb-1">
-            {user.language === 'english' && 'Duration (minutes)'}
-            {user.language === 'hindi' && 'अवधि (मिनट)'}
-            {user.language === 'gujarati' && 'સમયગાળો (મિનિટ)'}
-          </label>
-          <div className="flex items-center space-x-2">
-            <input
-              type="range"
-              id="duration"
-              min="10"
-              max="60"
-              step="5"
-              value={duration}
-              onChange={(e) => setDuration(parseInt(e.target.value))}
-              className="flex-1"
-            />
-            <span className="text-sm font-medium text-gray-700">{duration}</span>
-          </div>
+
+        <div className="flex space-x-2">
+          <button
+            onClick={toggleCreateTask}
+            className="bg-indigo-600 text-white px-4 py-2 rounded-lg flex items-center space-x-2 hover:bg-indigo-700 transition-colors"
+          >
+            <FaPlus />
+            <span>{isCreating ? t.cancel : t.createTask}</span>
+          </button>
+          <button
+            onClick={toggleCustomSubjectForm}
+            className="bg-green-600 text-white px-4 py-2 rounded-lg flex items-center space-x-2 hover:bg-green-700 transition-colors"
+          >
+            <FaTags />
+            <span>{showCustomSubjectForm ? t.hideCustomTasks : t.customTasks}</span>
+          </button>
         </div>
-        
-        {user.moodHistory && user.moodHistory.length > 0 && (
-          <div className="mb-4">
-            <p className="text-sm text-gray-600 mb-1">
-              {user.language === 'english' && 'Current Mood:'}
-              {user.language === 'hindi' && 'वर्तमान मूड:'}
-              {user.language === 'gujarati' && 'વર્તમાન મૂડ:'}
-            </p>
-            <MoodBadge mood={user.moodHistory[0].mood} />
-          </div>
-        )}
-        
-        <button
-          onClick={handleCreatePlan}
-          disabled={isLoading}
-          className="w-full mt-2 px-4 py-2 bg-pink-500 text-white rounded-md hover:bg-pink-600 focus:outline-none focus:ring-2 focus:ring-pink-300 flex items-center justify-center space-x-2"
-        >
-          {isLoading ? (
-            <span className="flex items-center">
-              <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-              </svg>
-              {user.language === 'english' && 'Creating...'}
-              {user.language === 'hindi' && 'बना रहा है...'}
-              {user.language === 'gujarati' && 'બનાવી રહ્યું છે...'}
-            </span>
-          ) : (
-            <>
-              <FaPlus className="text-sm" />
-              <span>{buttonText[user.language] || buttonText.english}</span>
-            </>
-          )}
-        </button>
       </div>
-      
-      {error && (
-        <div className="p-4 bg-red-50 text-red-700 rounded-md text-center">
-          {error}
-        </div>
-      )}
-      
-      {plan && (
-        <div className="space-y-4">
-          <div className="bg-white rounded-lg shadow-md overflow-hidden border-l-4 border-pink-300">
-            <div className="px-4 py-2 flex items-center gap-2 bg-pink-50">
-              <FaRegLightbulb className="text-pink-500" />
-              <span className="font-medium text-gray-800">
-                {user.language === 'english' && 'Your Plan'}
-                {user.language === 'hindi' && 'आपकी योजना'}
-                {user.language === 'gujarati' && 'તમારી યોજના'}
-              </span>
-            </div>
-            <div className="p-4">
-              <div className="whitespace-pre-wrap text-gray-700">{plan.content}</div>
-            </div>
+
+      <AnimatePresence>
+        {isCreating && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.3 }}
+            className="bg-white rounded-lg shadow-md p-6 mb-6"
+          >
+            <form onSubmit={handleSubmitTask} className="space-y-4">
+              <div>
+                <label htmlFor="title" className="block text-sm font-medium text-gray-700">
+                  {t.taskTitle}
+                </label>
+                <input
+                  type="text"
+                  id="title"
+                  name="title"
+                  value={newTask.title}
+                  onChange={handleInputChange}
+                  className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+                  required
+                />
+              </div>
+
+              <div>
+                <label htmlFor="description" className="block text-sm font-medium text-gray-700">
+                  {t.description}
+                </label>
+                <textarea
+                  id="description"
+                  name="description"
+                  value={newTask.description}
+                  onChange={handleInputChange}
+                  className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 resize-none h-24"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label htmlFor="category" className="block text-sm font-medium text-gray-700">
+                    {t.category}
+                  </label>
+                  <select
+                    id="category"
+                    name="category"
+                    value={newTask.category}
+                    onChange={handleInputChange}
+                    className="mt-1 block w-full pl-3 pr-10 py-2 text-base border border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md"
+                  >
+                    <option value="study">{t.study}</option>
+                    <option value="work">{t.work}</option>
+                    <option value="personal">{t.personal}</option>
+                    <option value="other">{t.other}</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label htmlFor="duration_minutes" className="block text-sm font-medium text-gray-700">
+                    {t.duration}
+                  </label>
+                  <input
+                    type="number"
+                    id="duration_minutes"
+                    name="duration_minutes"
+                    min="5"
+                    max="180"
+                    value={newTask.duration_minutes}
+                    onChange={handleInputChange}
+                    className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-end space-x-3 pt-4">
+                <button
+                  type="button"
+                  onClick={toggleCreateTask}
+                  className="px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                >
+                  {t.cancel}
+                </button>
+                <button
+                  type="submit"
+                  disabled={isLoading || !newTask.title.trim()}
+                  className={`px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 ${
+                    (isLoading || !newTask.title.trim()) ? 'opacity-70 cursor-not-allowed' : ''
+                  }`}
+                >
+                  {isLoading ? '...' : t.create}
+                </button>
+              </div>
+            </form>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Filters */}
+      <div className="bg-white rounded-lg shadow-md p-4 mb-6">
+        <div className="flex flex-col md:flex-row items-start md:items-center space-y-3 md:space-y-0 md:space-x-4">
+          <div className="flex items-center">
+            <FaFilter className="text-gray-500 mr-2" />
+            <span className="text-gray-700">{t.filterBy}:</span>
           </div>
           
-          {plan.tasks && <TaskList tasks={plan.tasks} />}
+          <div className="flex flex-wrap gap-2">
+            <select
+              value={filterStatus}
+              onChange={(e) => setFilterStatus(e.target.value)}
+              className="px-3 py-1 border border-gray-300 rounded-md text-sm"
+            >
+              <option value="all">{t.allTasks}</option>
+              <option value="pending">{t.pending}</option>
+              <option value="in_progress">{t.inProgress}</option>
+              <option value="completed">{t.completed}</option>
+              <option value="cancelled">{t.cancelled}</option>
+            </select>
+            
+            <select
+              value={filterCategory}
+              onChange={(e) => setFilterCategory(e.target.value)}
+              className="px-3 py-1 border border-gray-300 rounded-md text-sm"
+            >
+              <option value="all">{t.allCategories}</option>
+              <option value="study">{t.study}</option>
+              <option value="work">{t.work}</option>
+              <option value="personal">{t.personal}</option>
+              <option value="other">{t.other}</option>
+            </select>
+          </div>
         </div>
-      )}
+      </div>
+
+      {/* Custom Subject Form */}
+      <AnimatePresence>
+        {showCustomSubjectForm && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.3 }}
+            className="mb-6"
+          >
+            <div className="bg-white rounded-lg shadow-md p-6">
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Select category to manage:
+                </label>
+                <div className="flex space-x-2">
+                  <button 
+                    onClick={() => setSelectedCustomCategory('study')}
+                    className={`px-3 py-2 rounded ${selectedCustomCategory === 'study' ? 'bg-blue-600 text-white' : 'bg-gray-200'}`}
+                  >
+                    {t.study}
+                  </button>
+                  <button 
+                    onClick={() => setSelectedCustomCategory('work')}
+                    className={`px-3 py-2 rounded ${selectedCustomCategory === 'work' ? 'bg-blue-600 text-white' : 'bg-gray-200'}`}
+                  >
+                    {t.work}
+                  </button>
+                  <button 
+                    onClick={() => setSelectedCustomCategory('personal')}
+                    className={`px-3 py-2 rounded ${selectedCustomCategory === 'personal' ? 'bg-blue-600 text-white' : 'bg-gray-200'}`}
+                  >
+                    {t.personal}
+                  </button>
+                </div>
+              </div>
+              <CustomSubjectForm 
+                category={selectedCustomCategory} 
+                onSubjectAdded={(subject) => {
+                  toast.success(`Added new ${selectedCustomCategory} task: ${subject}`);
+                }}
+              />
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Task List */}
+      <div className="bg-white rounded-lg shadow-md p-6">
+        {isLoading && !isCreating ? (
+          <div className="text-center py-8">
+            <div className="inline-block animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-indigo-600 mb-2"></div>
+            <p className="text-gray-600">{t.loading}</p>
+          </div>
+        ) : (
+          <TaskList
+            tasks={getFilteredTasks()}
+            refreshTasks={fetchUserPlans}
+            language={language}
+          />
+        )}
+      </div>
     </div>
   );
 };

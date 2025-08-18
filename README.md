@@ -1,6 +1,31 @@
 # 🌸 MannMitra: A Sentiment-Aware AI for Productivity and Motivation
 
-> _"Dil ki sunta hai MannMitra. Kabhi shayari mein, kabhi plan ke saath."_  
+> _"Dil ki sunta hai MannMitra. Kabhi shayari mein, kabhi plan ke saath."_ 
+
+## 🧠 Enhanced Features
+
+### 👤 User Authentication
+- Secure login and registration using JWT
+- MongoDB integration for user data storage
+- Language preference storage
+
+### 📊 Mood Detection Flow
+1. Step 1: "How are you feeling today?" - Share your mood
+2. Step 2: Receive a contextual motivational quote
+3. Step 3: Choose what you want to focus on
+4. Step 4: Get a personalized micro-plan
+
+### 📝 CRUD Planner Features
+- Create custom tasks with title, description, duration
+- Categorize tasks by subject or type (study, work, personal)
+- Edit, delete, and mark tasks as completed
+- Filter tasks by status and category
+
+### 📱 Improved UI/UX
+- Clean, responsive design
+- Animated transitions using Framer Motion
+- Toast notifications for feedback
+- Mobile-optimized interfaceari mein, kabhi plan ke saath."_  
 > Your Desi emotional companion — now with a micro-planner.
 
 ---
@@ -75,19 +100,45 @@ mannmitra/
 ### 🔧 Backend Setup
 
 ```bash
-cd mannmitra/backend
+cd backend
 python -m venv venv
 source venv/bin/activate   # or venv\Scripts\activate on Windows
 pip install -r requirements.txt
-uvicorn app.main:app --reload
+uvicorn main:app --reload
 ```
+
+The database will be automatically initialized with default data when the application starts.
+
+#### Default Users for Testing
+
+The system includes pre-configured user accounts for easy testing:
+
+| Name | Email | Password | Language |
+|------|-------|----------|----------|
+| Khushi Shah | khushi@example.com | password123 | English |
+| Jayesh Patel | jayesh@example.com | password123 | Gujarati |
+| Sangita Sharma | sangita@example.com | password123 | Hindi |
+| Amit Kumar | amit@example.com | password123 | English |
 
 ### 🌐 Frontend Setup
 
 ```bash
-cd mannmitra/frontend
+cd frontend
 npm install
-npm run dev  # or npm start
+npm run dev
+```
+
+### 📦 MongoDB Setup (Optional)
+
+For persistent data storage, you can set up MongoDB:
+
+1. Install MongoDB Community Edition on your system
+2. Create a `.env` file in the backend directory with:
+```
+MONGODB_URI=mongodb://localhost:27017/mannmitra
+JWT_SECRET_KEY=your-secret-key-here
+JWT_ALGORITHM=HS256
+ACCESS_TOKEN_EXPIRE_MINUTES=30
 ```
 
 ---

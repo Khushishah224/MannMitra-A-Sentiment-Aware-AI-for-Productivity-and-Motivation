@@ -1,127 +1,137 @@
-import React, { useState } from 'react';
+import { useState, useContext } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { useNavigate } from 'react-router-dom';
 import Header from '../components/Header';
-import MoodInput from '../components/MoodInput';
-import ResponseCard from '../components/ResponseCard';
-import TaskList from '../components/TaskList';
+import AssistantChat from '../components/AssistantChat';
 import LanguageSelector from '../components/LanguageSelector';
 import { useUser } from '../context/UserContext';
-import { analyzeUserMood, getMotivationalQuote, getMicroPlan } from '../api';
+import { AuthContext } from '../context/AuthContext';
+import { createPlan } from '../api';
+import toast from 'react-hot-toast';
+import { STRINGS } from '../i18n/strings';
 
 const HomePage = () => {
-  const { user, updateUserPreferences, addMoodEntry } = useUser();
+  const { user: userPrefs, updateUserPreferences } = useUser();
+  const { user } = useContext(AuthContext);
   const [isLoading, setIsLoading] = useState(false);
-  const [response, setResponse] = useState(null);
-  const [error, setError] = useState(null);
+  const [planCreated, setPlanCreated] = useState(false);
+  const navigate = useNavigate();
+  
+  const language = userPrefs?.language || 'english';
 
-  const handleLanguageChange = (language) => {
-    updateUserPreferences({ language });
+  // Handle language change
+  const handleLanguageChange = (newLanguage) => {
+    updateUserPreferences({ language: newLanguage });
   };
 
-  const handleMoodSubmission = async (text) => {
+  // Handle finalizing the plan from AssistantChat (optionally with start time)
+  const handlePlanFinalized = async (data) => {
     setIsLoading(true);
-    setError(null);
     
     try {
-      // Step 1: Analyze mood
-      const moodData = await analyzeUserMood(text, user.language);
-      
-      // Determine if we should show a quote or a plan based on the mood
-      // For lazy, tired, stressed, or sad moods, show a plan
-      const needsPlan = ['lazy', 'tired', 'stressed', 'sad', 'very_sad'].includes(moodData.mood);
-      
-      let responseData;
-      
-      if (needsPlan) {
-        // Step 2A: Get a micro-plan
-        responseData = await getMicroPlan(moodData.mood, user.language, text);
-        
-        // Add tasks to the response
-        responseData = {
-          type: 'plan',
-          content: responseData.plan_text,
-          mood: moodData.mood,
-          tasks: responseData.tasks
-        };
-      } else {
-        // Step 2B: Get a motivational quote
-        const quoteData = await getMotivationalQuote(moodData.mood, user.language);
-        
-        responseData = {
-          type: 'quote',
-          content: quoteData.quote,
-          mood: moodData.mood
-        };
+      console.log('Plan finalized:', data);
+      // If createdPlan exists, we could update it with startTime here (optional v2)
+      if (!data?.plan && data?.planData) {
+        await createPlan(data.planData);
       }
       
-      // Update state with the response
-      setResponse(responseData);
+      // Show success and prompt to view in planner
+      setPlanCreated(true);
+      toast.success('Plan created successfully!');
       
-      // Save to mood history
-      addMoodEntry({
-        text,
-        mood: moodData.mood,
-        timestamp: new Date().toISOString(),
-        response: responseData
-      });
-      
-    } catch (err) {
-      console.error('Error processing mood:', err);
-      setError('Something went wrong. Please try again.');
+    } catch (error) {
+      console.error('Error creating plan:', error);
+      console.error('Error response:', error.response?.data);
+      toast.error('Failed to create plan. Please try again.');
     } finally {
       setIsLoading(false);
     }
   };
 
-  const subtitleText = {
-    english: "Your emotional support companion",
-    hindi: "आपका भावनात्मक सहायक साथी",
-    gujarati: "તમારો ભાવનાત્મક સહાય સાથી"
+  // Navigate to planner page
+  const goToPlannerPage = () => {
+    navigate('/planner');
+  };
+
+  // Welcome text localization
+  const t = {
+    welcome: STRINGS.app.title[language] || STRINGS.app.title.english,
+    subtitle: STRINGS.app.subtitle[language] || STRINGS.app.subtitle.english,
+    description: STRINGS.app.description[language] || STRINGS.app.description.english,
+    viewPlanner: STRINGS.planner.viewPlanner[language] || STRINGS.planner.viewPlanner.english,
+    createAnother: STRINGS.planner.createAnother[language] || STRINGS.planner.createAnother.english,
   };
 
   return (
-    <div className="max-w-md mx-auto px-4 py-8 pb-20">
-      <div className="flex justify-end mb-4">
+    <div className="container mx-auto px-4 pb-20 pt-4">
+      <Header title={t.welcome} subtitle={t.subtitle} />
+      
+      <div className="mb-6">
         <LanguageSelector 
-          currentLanguage={user.language} 
-          onLanguageChange={handleLanguageChange} 
+          language={language}
+          onChange={handleLanguageChange}
         />
       </div>
       
-      <Header title="MannMitra" subtitle={subtitleText[user.language] || subtitleText.english} />
-      
-      <MoodInput 
-        onSubmit={handleMoodSubmission}
-        language={user.language}
-      />
-      
-      {isLoading && (
-        <div className="mt-6 text-center">
-          <div className="inline-block animate-pulse">
-            <div className="w-8 h-8 mx-auto rounded-full bg-pink-200"></div>
-            <p className="text-sm text-gray-500 mt-2">Analyzing your mood...</p>
-          </div>
-        </div>
-      )}
-      
-      {error && (
-        <div className="mt-6 p-4 bg-red-50 text-red-700 rounded-md text-center">
-          {error}
-        </div>
-      )}
-      
-      {response && !isLoading && (
-        <div className="mt-6 space-y-4">
-          <ResponseCard 
-            type={response.type} 
-            content={response.content}
-            mood={response.mood}
-          />
-          
-          {response.type === 'plan' && response.tasks && (
-            <TaskList tasks={response.tasks} />
+      <div className="max-w-md mx-auto">
+        <AnimatePresence mode="wait">
+      {!planCreated ? (
+            <motion.div
+              key="mood-input"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.3 }}
+            >
+              <p className="text-gray-600 mb-6 text-center">
+                {t.description}
+              </p>
+              
+        <AssistantChat language={language} onPlanFinalized={handlePlanFinalized} userId={user?.id} />
+            </motion.div>
+          ) : (
+            <motion.div
+              key="success"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.3 }}
+              className="text-center"
+            >
+              <motion.div 
+                className="w-24 h-24 rounded-full bg-green-100 flex items-center justify-center mx-auto mb-4"
+                initial={{ scale: 0 }}
+                animate={{ scale: 1 }}
+                transition={{ type: 'spring', stiffness: 260, damping: 20 }}
+              >
+                <svg className="w-12 h-12 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+              </motion.div>
+              
+              <h3 className="text-xl font-medium text-gray-900 mb-2">{STRINGS.planner.createdTitle[language] || STRINGS.planner.createdTitle.english}</h3>
+              
+              <p className="text-gray-600 mb-6">{STRINGS.planner.createdDesc[language] || STRINGS.planner.createdDesc.english}</p>
+              
+              <div className="space-y-3">
+                <button
+                  onClick={goToPlannerPage}
+                  className="w-full px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 transition-colors"
+                >
+                  {t.viewPlanner}
+                </button>
+                
+                <button
+                  onClick={() => setPlanCreated(false)}
+                  className="w-full px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 transition-colors"
+                >
+                  {t.createAnother}
+                </button>
+              </div>
+            </motion.div>
           )}
-        </div>
-      )}
+        </AnimatePresence>
+      </div>
     </div>
   );
 };

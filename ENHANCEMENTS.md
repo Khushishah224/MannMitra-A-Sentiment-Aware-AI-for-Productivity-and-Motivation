@@ -33,10 +33,10 @@
 
 3. **Authentication System**:
    - Add user authentication with JWT
-   - Social login options (Google, Facebook)
+   - Social login options (Google)
    - User profiles with customizable settings
 
-4. **Deployment & DevOps**:
+4. **Deployment & DevOps**[not now only after full application build]:
    - Docker containerization
    - CI/CD pipeline setup
    - Monitoring and analytics integration
@@ -87,7 +87,7 @@
    - Guided meditations for different moods
    - Articles on productivity techniques
 
-10. **Integration Options**:
+10. **Integration Options**[not now only after full application build and also first check if it's free then only we go for it]:
     - Connect with productivity apps (Todoist, Notion)
     - Integrate with health trackers for holistic wellness
     - WhatsApp/Telegram bot interface
