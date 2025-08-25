@@ -1,10 +1,36 @@
-fastapi>=0.88.0
-uvicorn>=0.20.0
-pydantic>=1.10.2
-textblob>=0.17.1
-python-dotenv>=0.21.0
-pymongo>=4.3.3
-python-jose>=3.3.0
-passlib>=1.7.4
-bcrypt>=4.0.1
-email-validator>=2.0.0
+fastapi==0.116.1
+uvicorn==0.35.0
+pydantic==2.11.7
+textblob==0.19.0
+python-dotenv==1.1.1
+pymongo==4.14.0
+python-jose==3.5.0
+passlib==1.7.4
+bcrypt==4.3.0
+email-validator==2.2.0
+python-multipart==0.0.20
+
+# Sprint 3 - Empathy Layer dependencies
+transformers==4.55.4
+tokenizers==0.21.4
+torch==2.8.0
+accelerate==0.25.0
+huggingface-hub==0.34.4
+
+# Sprint 4 - Decision Helper dependencies
+scikit-fuzzy==0.4.2
+numpy==2.3.2
+scipy==1.16.1
+
+# NLP dependencies
+nltk==3.9.1
+regex==2025.7.34
+
+# Additional dependencies
+setuptools==80.9.0
+filelock==3.19.1
+tqdm==4.67.1
+requests==2.32.5
+PyYAML==6.0.2
+safetensors==0.6.2
+joblib==1.5.1

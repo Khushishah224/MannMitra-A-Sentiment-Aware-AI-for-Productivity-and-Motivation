@@ -2,57 +2,24 @@ import { useState } from 'react';
 import { motion } from 'framer-motion';
 import MoodSuggestionInput from './MoodSuggestionInput';
 import { STRINGS } from '../i18n/strings';
-import { updatePlan } from '../api';
-
-// Simple time picker (HH:MM) 24-hour
-function TimePicker({ value, onChange }) {
-  return (
-    <input
-      type="time"
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      className="px-3 py-2 border rounded-md focus:ring-2 focus:ring-indigo-200 focus:border-indigo-300"
-    />
-  );
-}
 
 export default function AssistantChat({ language = 'english', onPlanFinalized, userId }) {
   const [messages, setMessages] = useState([
     { role: 'assistant', text: STRINGS.assistant.assistantIntro[language] || STRINGS.assistant.assistantIntro.english }
   ]);
-  const [pendingPlan, setPendingPlan] = useState(null); // holds suggestion + createdPlan
-  const [startTime, setStartTime] = useState('');
 
-  const handleComplete = ({ createdPlan, suggestionText, responseText, mood }) => {
-    // Show assistant summary and time picker
-    setPendingPlan({ createdPlan, suggestionText, responseText, mood });
-
-    setMessages((prev) => [
-      ...prev,
-      { role: 'assistant', text: (suggestionText || '') + (responseText ? `\n\n${responseText}` : '') }
-    ]);
-  };
-
-  const finalizePlan = async () => {
-    // If time selected and we have a created plan, persist scheduled_time
-    try {
-      if (pendingPlan?.createdPlan?.id && startTime) {
-        await updatePlan(pendingPlan.createdPlan.id, { scheduled_time: startTime });
-      }
-    } catch (e) {
-      // Non-fatal: still proceed
-      console.error('Failed to set start time on plan:', e);
+  const handleComplete = ({ planData, suggestionText, responseText, mood }) => {
+    // Build assistant summary
+    let responseMessage = '';
+    if (mood?.empathetic_response) {
+      responseMessage += mood.empathetic_response + '\n\n';
     }
+    responseMessage += (suggestionText || '') + (responseText ? `\n\n${responseText}` : '');
 
-    if (onPlanFinalized) {
-      onPlanFinalized({ plan: pendingPlan?.createdPlan, startTime });
-    }
-    setMessages((prev) => [
-      ...prev,
-      { role: 'assistant', text: STRINGS.assistant.scheduledMsg[language] || STRINGS.assistant.scheduledMsg.english }
-    ]);
-    setPendingPlan(null);
-    setStartTime('');
+    setMessages((prev) => [...prev, { role: 'assistant', text: responseMessage }]);
+
+    // Do NOT create plan here; child already persisted it. Just bubble up.
+    if (onPlanFinalized) onPlanFinalized({ planData });
   };
 
   return (
@@ -65,21 +32,7 @@ export default function AssistantChat({ language = 'english', onPlanFinalized, u
         ))}
       </div>
 
-      {!pendingPlan && (
-        <MoodSuggestionInput language={language} onComplete={handleComplete} userId={userId} />
-      )}
-
-  {pendingPlan && !pendingPlan?.createdPlan?.scheduled_time && (
-        <div className="mt-4 p-4 border rounded-md bg-white shadow-sm">
-          <div className="mb-3 text-sm font-medium text-gray-700">{STRINGS.assistant.pickTime[language] || STRINGS.assistant.pickTime.english}</div>
-          <div className="flex items-center gap-3">
-            <TimePicker value={startTime} onChange={setStartTime} />
-            <button onClick={finalizePlan} className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700">
-              {STRINGS.assistant.schedule[language] || STRINGS.assistant.schedule.english}
-            </button>
-          </div>
-        </div>
-      )}
+      <MoodSuggestionInput language={language} onComplete={handleComplete} userId={userId} />
     </div>
   );
 }

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request, Response
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from datetime import timedelta
 from typing import Annotated
@@ -26,11 +26,19 @@ router = APIRouter(
     },
 )
 
-# OAuth2 password bearer scheme for token extraction
+# OAuth2 password bearer scheme for token extraction (header-only)
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/token")
 
+def get_bearer_or_cookie_token(request: Request) -> str | None:
+    """Extract JWT token from Authorization header (Bearer) or cookies."""
+    auth_header = request.headers.get("Authorization")
+    if auth_header and auth_header.lower().startswith("bearer "):
+        return auth_header.split(" ", 1)[1].strip()
+    cookie_token = request.cookies.get("access_token")
+    return cookie_token
+
 # Dependencies
-async def get_current_user(token: Annotated[str, Depends(oauth2_scheme)]) -> User:
+async def get_current_user(request: Request) -> User:
     """
     Dependency to get the current user from the token
     
@@ -50,6 +58,9 @@ async def get_current_user(token: Annotated[str, Depends(oauth2_scheme)]) -> Use
     )
     
     try:
+        token = get_bearer_or_cookie_token(request)
+        if not token:
+            raise credentials_exception
         token_data = decode_token(token)
         user = db.get_user_by_id(token_data.user_id)
         
@@ -117,7 +128,7 @@ async def register_user(user_data: UserCreate):
     )
 
 @router.post("/token", response_model=Token)
-async def login_for_access_token(form_data: Annotated[OAuth2PasswordRequestForm, Depends()]):
+async def login_for_access_token(response: Response, form_data: Annotated[OAuth2PasswordRequestForm, Depends()]):
     """
     Login endpoint to get access token
     
@@ -154,6 +165,14 @@ async def login_for_access_token(form_data: Annotated[OAuth2PasswordRequestForm,
         expires_delta=access_token_expires,
     )
     
+    # Also set HttpOnly cookie for browsers (dev-friendly; secure flag off for localhost)
+    response.set_cookie(
+        key="access_token",
+        value=access_token,
+        httponly=True,
+        samesite="lax",
+        secure=False
+    )
     return {"access_token": access_token, "token_type": "bearer"}
 
 @router.get("/me", response_model=User)
@@ -213,7 +232,7 @@ async def update_current_user(
     )
 
 @router.post("/logout", status_code=status.HTTP_200_OK)
-async def logout():
+async def logout(response: Response):
     """
     Logout endpoint
     
@@ -223,4 +242,6 @@ async def logout():
     Returns:
         dict: A success message
     """
+    # Clear cookie as well
+    response.delete_cookie("access_token")
     return {"message": "Logout successful"}

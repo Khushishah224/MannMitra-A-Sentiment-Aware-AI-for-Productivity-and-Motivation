@@ -1,32 +1,39 @@
-# 🌸 MannMitra: A Sentiment-Aware AI for Productivity and Motivation
+# 🌸 MannMitra: A Sentiment-Aware AI for Productivity and Motivation (Aug 2025)
 
 > _"Dil ki sunta hai MannMitra. Kabhi shayari mein, kabhi plan ke saath."_ 
 
-## 🧠 Enhanced Features
+## 🧠 Current Core Features Overview
 
 ### 👤 User Authentication
 - Secure login and registration using JWT
 - MongoDB integration for user data storage
 - Language preference storage
 
-### 📊 Mood Detection Flow
-1. Step 1: "How are you feeling today?" - Share your mood
-2. Step 2: Receive a contextual motivational quote
-3. Step 3: Choose what you want to focus on
-4. Step 4: Get a personalized micro-plan
+### 📊 Mood → Motivation → Micro‑Plan Flow
+1. Enter mood text → `/moods/analyze` (Transformer + TextBlob fallback) → normalized mood & empathetic line.
+2. Receive contextual motivational quote (language + mood aware).
+3. Choose category, subject (defaults + custom merge), duration, optional start time.
+4. Backend returns preview plan (not stored) → Accept creates plan.
 
-### 📝 CRUD Planner Features
-- Create custom tasks with title, description, duration
-- Categorize tasks by subject or type (study, work, personal)
-- Edit, delete, and mark tasks as completed
-- Filter tasks by status and category
+### 📝 Planner & Scheduling
+- Create tasks (title, description, category, duration, optional start time)
+- Inline edit / start / complete / cancel / snooze (+1m..+1h) / reschedule
+- Conflict detection + offer chain shift or next free slot
+- Auto‑rescheduler shifts missed tasks forward (≈1h, 75% duration) resolving conflicts
+- 30s reminder loop triggers toast + system Notification (if permission)
+- Filter by status & category; animated responsive task grid
 
-### 📱 Improved UI/UX
-- Clean, responsive design
-- Animated transitions using Framer Motion
-- Toast notifications for feedback
-- Mobile-optimized interfaceari mein, kabhi plan ke saath."_  
-> Your Desi emotional companion — now with a micro-planner.
+### 🧭 Decision Helper (Fuzzy Logic)
+- `/decision` compares two options (e.g., Study vs Rest)
+- Extracts time_pressure, fatigue, importance from context + mood
+- Fuzzy membership + rules → defuzzify decision score & confidence
+- Heuristic fallback when scikit‑fuzzy unavailable
+
+### 📱 UI/UX Enhancements
+- Sidebar + main panel layout, Framer Motion transitions
+- Tailwind glass/gradient badges, card animations
+- Paginated mood history entries + gradient chart (Recharts)
+- Multi‑language (EN / HI / GU)
 
 ---
 
@@ -38,64 +45,120 @@ It’s not just a chatbot. It’s a _mood-sensitive_ productivity buddy.
 
 ---
 
-## 💡 Key Features
-
-| Feature                            | Description                                                                 |
-|------------------------------------|-----------------------------------------------------------------------------|
-| 🧠 Sentiment Analysis              | Understands user mood via text input (sad, happy, stressed, lazy, etc.)    |
-| 💬 Motivational Response Engine    | Sends quotes, desi lines, or shayari matched to your emotion               |
-| 📆 Micro-Planner                   | Suggests quick, doable study/work tasks for low-motivation moods           |
-| 🌐 Multilingual Support            | English, Hindi, and Gujarati (more soon)                                   |
-| 🧠 Culture-aware Conversations     | Uses Hinglish, Indian idioms, proverbs, and cinema influence               |
-| 🧾 Quote Memory                    | Avoids repeating same quote in same session                                |
-| 📊 Mood History Tracking (optional)| Track your productivity/emotion graph                                      |
-
----
-
-## 📦 Tech Stack
-
-| Layer     | Technology Used             |
-|-----------|-----------------------------|
-| Frontend  | React.js, Tailwind CSS       |
-| Backend   | FastAPI (Python)             |
-| NLP       | TextBlob, custom rules       |
-| DB        | MongoDB (Quotes + Mood logs) |
-| Auth      | Optional - JWT or sessions   |
-| Hosting   | Vercel (frontend), Render/Railway (backend) |
+## 💡 Feature Mapping & Technologies
+| # | Feature | Backend / Frontend Tech | Notes |
+|---|---------|-------------------------|-------|
+| 1 | Auth (JWT + cookie) | FastAPI auth, python-jose, bcrypt, React Context | Header + HttpOnly cookie; `/auth/me` reads both. |
+| 2 | Multi-language UI | strings.js, UserContext | Stored preference, dynamic labels. |
+| 3 | Emotion analysis | HuggingFace RoBERTa + TextBlob fallback | Normalizes to internal mood taxonomy. |
+| 4 | Empathetic response | Sentiment templates | Adds supportive line to UI. |
+| 5 | Motivational quotes | quotes.json + response_picker | Mood + language selection with fallback. |
+| 6 | Plan preview vs create | `/suggestions/personalized-plan` | Prevents premature DB writes. |
+| 7 | Custom subjects CRUD | `/user-subjects` + SubjectSelector | Merge defaults + user-defined. |
+| 8 | Task planner board | PlannerPage + TaskList + Framer Motion | Animated grid, filters, inline edit. |
+| 9 | Conflict detection | timeConflicts utils + backend 409 | Suggests next slot or chain shift. |
+|10 | Chain shift resolution | computeChainShifts/applyChainShifts | Cascade schedule shift. |
+|11 | Snooze & status updates | Snooze endpoint + TaskList actions | Unified snooze button w/ hidden select. |
+|12 | Reminder & notifications | 30s interval + Notification API | Lead minutes & scheduled alerts. |
+|13 | Auto-rescheduler | Async loop (5 min) in `main.py` | Moves stale tasks, reduces duration, resolves conflicts. |
+|14 | Mood history & chart | History page + Recharts | Pagination + gradient line. |
+|15 | Decision helper | scikit-fuzzy + heuristics | Explainable fuzzy inference. |
+|16 | UI polish / accessibility | Tailwind, semantic structure | Consistent spacing & contrast. |
 
 ---
 
-## 📁 Project Structure
+## 📦 Updated Tech Stack
+| Layer | Technologies |
+|-------|-------------|
+| Frontend | React + Vite, Tailwind CSS, Framer Motion, Axios, Recharts, React Hot Toast, React Icons |
+| Backend | FastAPI, Pydantic, Uvicorn, dotenv |
+| NLP / Emotion | HuggingFace transformer (RoBERTa emotion), TextBlob fallback |
+| Decision AI | scikit-fuzzy (fuzzy inference) + heuristic fallback |
+| Scheduling | Async background auto-rescheduler + conflict utilities |
+| Data | MongoDB (optional) + in-memory fallback, JSON seed data |
+| Auth | JWT (python-jose), bcrypt, HttpOnly cookie support |
+| State | React Context, localStorage |
+| i18n | Manual string tables (EN/HI/GU) |
+| Visualization | Recharts |
+| Notifications | Web Notifications API + toast |
+
+---
+
+## 📁 Project Structure (Condensed)
 
 ```
-mannmitra/
+MannMitra/
 ├── backend/
 │   ├── app/
-│   │   ├── main.py               # FastAPI app runner
+│   │   ├── models/               # Pydantic models for API schemas
+│   │   │   ├── mood.py           # Mood data models
+│   │   │   ├── plan.py           # Planner models
+│   │   │   ├── suggestion.py     # Suggestion models
+│   │   │   ├── token.py          # Authentication token models
+│   │   │   ├── user.py           # User models
+│   │   │   └── user_subject.py   # Custom subject models
 │   │   ├── routes/
-│   │   │   ├── mood.py           # Analyze mood
-│   │   │   ├── planner.py        # Micro-planner
-│   │   │   ├── quote.py          # Send quotes
+│   │   │   ├── auth.py           # Authentication routes
+│   │   │   ├── history.py        # Mood history tracking
+│   │   │   ├── mood.py           # Mood analysis
+│   │   │   ├── moods.py          # Mood tracking routes
+│   │   │   ├── planner.py        # Planner routes
+│   │   │   ├── plans.py          # CRUD for plans
+│   │   │   ├── quote.py          # Motivational quotes
+│   │   │   ├── suggestions.py    # Mood-based suggestions
+│   │   │   └── user_subjects.py  # Custom subject management
 │   │   └── utils/
-│   │       └── sentiment.py      # Sentiment logic
-│   │       └── response_picker.py# Choose quote by mood/lang
-│   └── data/
-│       └── sample_quotes.json
+│   │       ├── database.py       # MongoDB integration
+│   │       ├── defaultdata.py    # Default data seeding
+│   │       ├── response_picker.py # Choose quote by mood/lang
+│   │       ├── security.py       # JWT authentication
+│   │       └── sentiment.py      # Sentiment analysis logic
+│   ├── data/
+│   │   └── quotes.json           # Multilingual quotes database
+│   └── main.py                   # FastAPI app runner
 │
 ├── frontend/
 │   ├── public/
 │   ├── src/
-│   │   ├── components/           # UI elements
-│   │   ├── pages/                # Home, Planner, History
-│   │   ├── api/                  # Axios/FETCH for backend
-│   │   └── App.jsx
+│   │   ├── api/                  # API client integration
+│   │   │   ├── auth.js           # Authentication APIs
+│   │   │   ├── index.js          # Unified API client with interceptors
+│   │   │   └── userSubjects.js   # User subjects API
+│   │   ├── assets/               # Static assets
+│   │   ├── components/           # UI components
+│   │   │   ├── Auth/             # Authentication components
+│   │   │   ├── AssistantChat.jsx # Chat-like assistant wrapper
+│   │   │   ├── MoodBadge.jsx     # Mood visualization
+│   │   │   ├── MoodHistoryChart.jsx # Mood trends visualization
+│   │   │   ├── MoodInput.jsx     # Mood input component
+│   │   │   ├── TaskList.jsx      # Task list with actions
+│   │   │   └── SubjectSelector.jsx # Subject selection chips
+│   │   ├── context/              # React context providers
+│   │   │   ├── AuthContext.jsx   # Authentication state
+│   │   │   └── UserContext.jsx   # User preferences
+│   │   ├── i18n/                 # Internationalization
+│   │   │   └── strings.js        # Multilingual strings
+│   │   ├── pages/                # Application pages
+│   │   │   ├── Auth/             # Login/Register pages
+│   │   │   ├── HistoryPage.jsx   # Mood history/insights
+│   │   │   ├── HomePage.jsx      # Main assistant page
+│   │   │   ├── PlannerPage.jsx   # Task planner
+│   │   │   └── ProfilePage.jsx   # User profile
+│   │   ├── utils/                # Utility functions
+│   │   ├── App.jsx               # Main component
+│   │   └── main.jsx              # Entry point
+│   ├── index.html
+│   └── vite.config.js
 │
-└── README.md
+├── ENHANCEMENTS.md               # Enhancement roadmap
+├── IMPLEMENTATION_SUMMARY.md     # Implementation details
+├── README.md                     # Project documentation
+└── RUNNING.md                    # Setup instructions
 ```
 
 ---
 
-## 🚀 How to Run the Project
+## 🚀 Running the Project
 
 ### 🔧 Backend Setup
 
@@ -143,7 +206,7 @@ ACCESS_TOKEN_EXPIRE_MINUTES=30
 
 ---
 
-## 🧠 Sample Conversation
+## 🧠 Sample Motivation Conversation
 
 **User:** "I'm feeling useless and tired right now."  
 **MannMitra:**  
@@ -153,14 +216,17 @@ ACCESS_TOKEN_EXPIRE_MINUTES=30
 
 ---
 
-## 🧪 Sample API Routes
-
-| Method | Route             | Purpose                        |
-|--------|-------------------|--------------------------------|
-| POST   | `/analyze`        | Detect sentiment/emotion       |
-| GET    | `/quote`          | Get quote based on mood/lang   |
-| POST   | `/plan`           | Micro-task suggestion          |
-| GET    | `/history/{id}`   | (Optional) Mood history        |
+## 🧪 Key API Endpoints (Abbreviated)
+| Method | Route | Purpose |
+|--------|-------|---------|
+| POST | /moods/analyze | Emotion detection + empathetic response |
+| GET | /quote | Quote by mood + language |
+| POST | /suggestions/personalized-plan | Non-persisted plan preview |
+| POST | /plans | Create plan after accept |
+| POST | /plans/{id}/snooze | Shift scheduled time forward |
+| POST | /plans/{id}/reminder | Set lead minutes |
+| POST | /decision | Fuzzy decision helper |
+| GET | /history | Mood history (authed) |
 
 ---
 
@@ -175,7 +241,7 @@ ACCESS_TOKEN_EXPIRE_MINUTES=30
 
 ---
 
-## 🔮 Future Enhancements
+## 🔮 Future Enhancements (Shortlist)
 
 - 🎙️ Voice input (speech-to-text)
 - 🗣️ Text-to-speech motivation
@@ -187,13 +253,24 @@ ACCESS_TOKEN_EXPIRE_MINUTES=30
 
 ---
 
-## 🎓 Viva & Evaluation Ready
+## 🤔 ANN vs Fuzzy Logic
+We integrate a **pre‑trained Transformer (ANN)** only for emotion classification; **no custom ANN training** occurs here. Decision support intentionally uses **fuzzy logic** for interpretability.
+
+### Fuzzy Logic Flow
+1. Parse context → derive numeric factors (time_pressure, fatigue, importance).
+2. Map factors to membership sets (low / medium / high) via triangular functions.
+3. Apply rule base (e.g., high time_pressure & high importance ⇒ favor work option).
+4. Aggregate & defuzzify (0–10 score). <5 leans Option 1, >5 Option 2, ≈5 balanced.
+5. Compute confidence = distance from midpoint; generate factor breakdown & advice.
+6. Fallback heuristics when scikit-fuzzy unavailable (weighted scoring + templates).
+
+## 🎓 Viva & Evaluation Quick Answers
 
 | Question                     | Sample Answer                                                                                     |
 |-----------------------------|----------------------------------------------------------------------------------------------------|
 | What problem does it solve? | Motivation dips, laziness, and emotional slumps among students and professionals                  |
 | What is unique?             | Indian tone, Hinglish support, culturally rooted emotional motivation and productivity planning    |
-| What AI techniques are used?| NLP, Sentiment Analysis (TextBlob), Rule-based micro-planning, multilingual context mapping       |
+| What AI techniques are used?| Transformer-based emotion classification, fuzzy logic decision inference, heuristic fallback rules, rule-assisted micro-planning |
 | Any dataset used?           | No large datasets — quotes stored in curated JSON, emotions detected via NLP                     |
 | Expandability?              | Yes — modular APIs, new languages, more moods/tasks can be added easily                           |
 

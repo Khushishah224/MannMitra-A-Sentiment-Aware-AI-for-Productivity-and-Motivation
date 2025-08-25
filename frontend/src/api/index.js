@@ -102,7 +102,8 @@ export const getPersonalizedPlan = async (mood, category, subject = null, durati
       // Backend expects time; sending "HH:MM" string is acceptable for Pydantic parsing
       payload.start_time = startTime;
     }
-    const response = await apiClient.post('/suggestions/personalized-plan', payload);
+  // Returns a preview of the plan suggestion; not persisted until user accepts
+  const response = await apiClient.post('/suggestions/personalized-plan', payload);
     return response.data;
   } catch (error) {
     console.error('Error getting personalized plan:', error);
@@ -144,6 +145,10 @@ export const createPlan = async (planData) => {
     return response.data;
   } catch (error) {
     console.error('Error creating plan:', error);
+    // Capture the 409 conflict error and make it available in the error object
+    if (error.response && error.response.status === 409) {
+      error.timeConflictError = error.response.data.detail;
+    }
     throw error;
   }
 };
@@ -179,6 +184,26 @@ export const updatePlan = async (planId, updateData) => {
     return response.data;
   } catch (error) {
     console.error('Error updating plan:', error);
+    throw error;
+  }
+};
+
+export const snoozePlan = async (planId, minutes = 10) => {
+  try {
+    const response = await apiClient.post(`/plans/${planId}/snooze`, null, { params: { minutes } });
+    return response.data;
+  } catch (error) {
+    console.error('Error snoozing plan:', error);
+    throw error;
+  }
+};
+
+export const setPlanReminder = async (planId, leadMinutes) => {
+  try {
+    const response = await apiClient.post(`/plans/${planId}/reminder`, null, { params: { lead_minutes: leadMinutes } });
+    return response.data;
+  } catch (error) {
+    console.error('Error setting plan reminder:', error);
     throw error;
   }
 };
@@ -224,6 +249,23 @@ export const fetchMoodHistory = async (limit = 30, moodType = null) => {
     return response.data; // { moods: [...], count }
   } catch (error) {
     console.error('Error fetching mood history:', error);
+    // Return empty data instead of throwing error
+    return { moods: [], count: 0 };
+  }
+};
+
+// Sprint 4: Decision Helper API
+export const getDecisionHelp = async (option1, option2, context, mood = 'neutral') => {
+  try {
+    const response = await apiClient.post('/decision/', {
+      option1,
+      option2,
+      context,
+      mood
+    });
+    return response.data;
+  } catch (error) {
+    console.error('Error getting decision help:', error);
     throw error;
   }
 };

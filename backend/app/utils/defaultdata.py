@@ -406,4 +406,172 @@ def insert_all_defaults():
     if not insert_default_users():
         success = False
     
+    # Seed simple sample history and plans for quick testing
+    try:
+        # Find a default user id (first one inserted)
+        user_id = None
+        if db.is_connected():
+            any_user = db.users.find_one({})
+            if any_user:
+                user_id = str(any_user.get("_id"))
+        else:
+            user_id = next(iter(db.users)) if isinstance(db.users, dict) and db.users else None
+
+        if user_id:
+            # Seed mood history entries across multiple days
+            from datetime import datetime, timedelta
+            now = datetime.now()
+            
+            # Create 10 days of mood history
+            moods = []
+            for days_ago in range(10, -1, -1):  # 10 days ago to today
+                entry_date = now - timedelta(days=days_ago)
+                
+                # Different moods for different days to show variety
+                if days_ago % 5 == 0:
+                    mood_type = "happy"
+                    text = f"Feeling great on {entry_date.strftime('%A')}!"
+                elif days_ago % 4 == 0:
+                    mood_type = "stressed"
+                    text = f"Lots of deadlines coming up this {entry_date.strftime('%A')}"
+                elif days_ago % 3 == 0:
+                    mood_type = "tired"
+                    text = f"Not enough sleep last night, feeling tired this {entry_date.strftime('%A')}"
+                elif days_ago % 2 == 0:
+                    mood_type = "content"
+                    text = f"Average {entry_date.strftime('%A')}, not bad"
+                else:
+                    mood_type = "lazy"
+                    text = f"Just want to relax this {entry_date.strftime('%A')}"
+                
+                moods.append({
+                    "mood": mood_type,
+                    "text": text,
+                    "language": "english",
+                    "timestamp": entry_date,
+                    "created_at": entry_date,
+                    "updated_at": entry_date
+                })
+            
+            # Add the entries
+            for m in moods:
+                m["user_id"] = user_id
+                db.save_mood(user_id, m)
+
+            # Seed plans with varied times and statuses to test features
+            # We're reusing the datetime import from above
+            
+            # Create a mix of past, present and future tasks with different statuses
+            
+            # Task completed yesterday
+            yesterday = now - timedelta(days=1)
+            yesterday_hh = f"{yesterday.hour:02d}"
+            yesterday_mm = f"{yesterday.minute:02d}"
+            
+            # Task completed earlier today - 3 hours ago
+            past_time = now - timedelta(hours=3)
+            past_hh = f"{past_time.hour:02d}"
+            past_mm = f"{past_time.minute:02d}"
+            
+            # Task in the past (pending) - 20 minutes ago (will trigger auto-reschedule)
+            missed_time = now - timedelta(minutes=20)
+            missed_hh = f"{missed_time.hour:02d}"
+            missed_mm = f"{missed_time.minute:02d}"
+            
+            # Task in the past (snoozed) - 10 minutes ago (will also trigger auto-reschedule)
+            snoozed_time = now - timedelta(minutes=10)
+            snoozed_hh = f"{snoozed_time.hour:02d}"
+            snoozed_mm = f"{snoozed_time.minute:02d}"
+            
+            # Future time (2 hours ahead)
+            future_time = now + timedelta(hours=2)
+            future_hh = f"{future_time.hour:02d}"
+            future_mm = f"{future_time.minute:02d}"
+            
+            # Tomorrow
+            tomorrow = now + timedelta(days=1)
+            tomorrow_hh = f"{tomorrow.hour:02d}"
+            tomorrow_mm = f"{tomorrow.minute:02d}"
+            
+            sample_plans = [
+                # Past completed tasks
+                {
+                    "title": "Study - Mathematics",
+                    "description": "Review algebra for 15 minutes",
+                    "category": "study",
+                    "duration_minutes": 15,
+                    "status": "completed",
+                    "user_id": user_id,
+                    "scheduled_time": past_hh + ":" + past_mm,
+                    "created_at": past_time,
+                    "updated_at": past_time
+                },
+                {
+                    "title": "Personal - Morning yoga",
+                    "description": "Daily stretching routine",
+                    "category": "personal",
+                    "duration_minutes": 20,
+                    "status": "completed",
+                    "user_id": user_id,
+                    "scheduled_time": yesterday_hh + ":" + yesterday_mm,
+                    "created_at": yesterday,
+                    "updated_at": yesterday
+                },
+                
+                # Past tasks that need auto-rescheduling
+                {
+                    "title": "Work - Emails",
+                    "description": "Clear inbox - should get auto-rescheduled",
+                    "category": "work",
+                    "duration_minutes": 10,
+                    "status": "pending",
+                    "user_id": user_id,
+                    "scheduled_time": missed_hh + ":" + missed_mm,
+                    "created_at": missed_time,
+                    "updated_at": missed_time
+                },
+                {
+                    "title": "Study - Review notes",
+                    "description": "Quick review of yesterday's notes - should also get auto-rescheduled",
+                    "category": "study",
+                    "duration_minutes": 15,
+                    "status": "snoozed",
+                    "user_id": user_id,
+                    "scheduled_time": snoozed_hh + ":" + snoozed_mm,
+                    "created_at": snoozed_time,
+                    "updated_at": snoozed_time
+                },
+                
+                # Upcoming tasks
+                {
+                    "title": "Work - Team meeting",
+                    "description": "Weekly status update",
+                    "category": "work",
+                    "duration_minutes": 30,
+                    "status": "pending",
+                    "user_id": user_id,
+                    "scheduled_time": future_hh + ":" + future_mm,
+                    "created_at": now,
+                    "updated_at": now
+                },
+                {
+                    "title": "Personal - Stretching",
+                    "description": "Light stretching session",
+                    "category": "personal",
+                    "duration_minutes": 5,
+                    "status": "pending",
+                    "user_id": user_id,
+                    "scheduled_time": tomorrow_hh + ":" + tomorrow_mm,
+                    "created_at": now,
+                    "updated_at": now
+                }
+            ]
+            for sp in sample_plans:
+                try:
+                    db.create_plan(sp)
+                except Exception:
+                    pass
+    except Exception as _:
+        pass
+
     return success

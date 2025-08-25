@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import Header from '../components/Header';
 import LanguageSelector from '../components/LanguageSelector';
 import MoodBadge from '../components/MoodBadge';
@@ -31,6 +32,7 @@ const HistoryPage = () => {
     hindi: "अभी तक कोई मूड इतिहास नहीं। होम पेज पर साझा करें कि आप कैसा महसूस कर रहे हैं।",
     gujarati: "હજી સુધી કોઈ મૂડ ઇતિહાસ નથી. હોમ પેજ પર શેર કરો કે તમે કેવું અનુભવી રહ્યા છો."
   };
+  
   const signInHint = {
     english: 'Sign in to unlock your mood history chart.',
     hindi: 'अपने मूड इतिहास चार्ट को देखने के लिए साइन इन करें।',
@@ -48,6 +50,8 @@ const HistoryPage = () => {
 
   const [serverHistory, setServerHistory] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [page, setPage] = useState(1);
+  const pageSize = 6;
 
   useEffect(() => {
     let mounted = true;
@@ -55,11 +59,15 @@ const HistoryPage = () => {
       setLoading(true);
       try {
         const res = await fetchMoodHistory(30);
-        if (mounted && res?.moods) {
-          setServerHistory(res.moods);
+        if (mounted) {
+          if (res?.moods && Array.isArray(res.moods)) {
+            setServerHistory(res.moods);
+          } else {
+            setServerHistory([]);
+          }
         }
-      } catch (e) {
-        // Silently ignore (could be unauthenticated)
+      } catch (_) {
+        if (mounted) setServerHistory([]);
       } finally {
         if (mounted) setLoading(false);
       }
@@ -70,71 +78,165 @@ const HistoryPage = () => {
 
   const hasLocal = user.moodHistory && user.moodHistory.length > 0;
   const hasServer = serverHistory && serverHistory.length > 0;
+  const sourceData = hasServer ? serverHistory : (user.moodHistory || []);
+  const totalPages = Math.max(1, Math.ceil(sourceData.length / pageSize));
+  const currentPage = Math.min(page, totalPages);
+  const paginated = sourceData.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
   return (
-    <div className="max-w-md mx-auto px-4 py-8 pb-20">
-      <div className="flex justify-end mb-4">
-        <LanguageSelector 
-          currentLanguage={user.language} 
-          onLanguageChange={handleLanguageChange} 
-        />
-      </div>
-      
-      <Header 
-        title={titleText[user.language] || titleText.english} 
-        subtitle={subtitleText[user.language] || subtitleText.english} 
-      />
-      
-      {/* Chart section (server data preferred) */}
-      {(hasServer) && (
-        <div className="mb-6 bg-white rounded-lg shadow-md p-4">
-          <h3 className="text-sm font-medium text-gray-700 mb-2">
-            {user.language === 'english' ? 'Last 30 moods' : user.language === 'hindi' ? 'पिछले 30 मूड' : 'છેલ્લા 30 મૂડ'}
-          </h3>
-          <MoodHistoryChart data={serverHistory} />
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-white">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 pb-24">
+        {/* Top Bar */}
+        <div className="flex justify-between items-center mb-8">
+          <div className="flex-1"></div>
+          <LanguageSelector 
+            currentLanguage={user.language} 
+            onLanguageChange={handleLanguageChange} 
+          />
         </div>
-      )}
 
-      {(!hasLocal && !hasServer && !loading) ? (
-        <div className="text-center p-6 bg-gray-50 rounded-lg">
-          <p className="text-gray-500">
-            {noHistoryText[user.language] || noHistoryText.english}
-          </p>
-          {!localStorage.getItem('token') && (
-            <p className="text-gray-400 text-xs mt-2">{signInHint[user.language] || signInHint.english}</p>
-          )}
-        </div>
-      ) : (
-        <div className="space-y-4">
-          {(hasServer ? serverHistory : user.moodHistory).map((entry, index) => (
-            <div key={index} className="bg-white rounded-lg shadow-md overflow-hidden">
-              <div className="p-4 border-b border-gray-100">
-                <div className="flex justify-between items-start mb-2">
-                  <MoodBadge mood={entry.mood || entry.mood_type} />
-                  <span className="text-xs text-gray-500">
-                    {formatDate(entry.timestamp || entry.created_at)}
-                  </span>
+        {/* Header */}
+        <Header 
+          title={titleText[user.language] || titleText.english} 
+          subtitle={subtitleText[user.language] || subtitleText.english} 
+        />
+
+        <div className="grid lg:grid-cols-12 gap-8">
+          {/* Chart Section */}
+          {hasServer && (
+            <div className="lg:col-span-5">
+              <div className="bg-white/70 backdrop-blur-sm rounded-3xl shadow-sm border border-gray-100/50 p-6">
+                <div className="flex items-center justify-between mb-6">
+                  <h3 className="text-lg font-semibold text-gray-800">
+                    {user.language === 'english' ? 'Last 30 Days' : 
+                     user.language === 'hindi' ? 'पिछले 30 दिन' : 'છેલ્લા 30 દિવસ'}
+                  </h3>
+                  <div className="w-2 h-2 bg-pink-500 rounded-full"></div>
                 </div>
-                <p className="text-gray-800">{entry.text}</p>
+                <MoodHistoryChart data={serverHistory} />
               </div>
-              {entry.response && (
-                <div className="p-4 bg-gray-50">
-                  <p className="text-sm text-gray-600 font-medium mb-1">
-                    {entry.response.type === 'quote' ? 
-                      (user.language === 'english' ? 'Motivation:' : 
-                       user.language === 'hindi' ? 'प्रेरणा:' : 'પ્રેરણા:') : 
-                      (user.language === 'english' ? 'Plan:' : 
-                       user.language === 'hindi' ? 'योजना:' : 'યોજના:')}
-                  </p>
-                  <p className="text-gray-700 text-sm whitespace-pre-wrap">
-                    {entry.response.content}
-                  </p>
-                </div>
-              )}
             </div>
-          ))}
+          )}
+
+          {/* History List Section */}
+          <div className={hasServer ? "lg:col-span-7" : "lg:col-span-12"}>
+            {!hasLocal && !hasServer && !loading ? (
+              <motion.div 
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="text-center p-12 bg-white/70 backdrop-blur-sm rounded-3xl shadow-sm border border-gray-100/50"
+              >
+                <div className="w-16 h-16 bg-gradient-to-br from-pink-100 to-rose-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                  <span className="text-2xl">🌸</span>
+                </div>
+                <h3 className="text-lg font-semibold text-gray-800 mb-2">No History Yet</h3>
+                <p className="text-gray-500 text-sm max-w-md mx-auto mb-4">
+                  {noHistoryText[user.language] || noHistoryText.english}
+                </p>
+                {!localStorage.getItem('token') && (
+                  <p className="text-gray-400 text-xs">
+                    {signInHint[user.language] || signInHint.english}
+                  </p>
+                )}
+              </motion.div>
+            ) : (
+              <div className="space-y-6">
+                {/* History Grid */}
+                <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-2">
+                  <AnimatePresence mode="popLayout">
+                    {paginated.map((entry, index) => (
+                      <motion.div
+                        key={`${entry.id || index}-${entry.timestamp || entry.created_at}`}
+                        layout
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -10 }}
+                        transition={{ duration: 0.3, delay: index * 0.05 }}
+                        className="group bg-white/70 backdrop-blur-sm rounded-2xl shadow-sm border border-gray-100/50 overflow-hidden hover:shadow-md hover:scale-[1.01] transition-all duration-300"
+                      >
+                        {/* Main Content */}
+                        <div className="p-5">
+                          <div className="flex justify-between items-start mb-4">
+                            <MoodBadge mood={entry.mood || entry.mood_type} />
+                            <span className="text-xs font-medium text-gray-400 bg-gray-50 px-2 py-1 rounded-full">
+                              {formatDate(entry.timestamp || entry.created_at)}
+                            </span>
+                          </div>
+                          <p className="text-sm text-gray-700 leading-relaxed line-clamp-4 group-hover:line-clamp-none transition-all duration-300">
+                            {entry.text}
+                          </p>
+                        </div>
+
+                        {/* Response Section */}
+                        {entry.response && (
+                          <div className="border-t border-gray-100/50 bg-gradient-to-br from-gray-50/50 to-white/50 p-4">
+                            <div className="flex items-center mb-2">
+                              <div className="w-1.5 h-1.5 bg-pink-500 rounded-full mr-2"></div>
+                              <span className="text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                                {entry.response.type === 'quote' ? 
+                                  (user.language === 'english' ? 'Inspiration' : 
+                                   user.language === 'hindi' ? 'प्रेरणा' : 'પ્રેરણા') : 
+                                  (user.language === 'english' ? 'Action Plan' : 
+                                   user.language === 'hindi' ? 'कार्य योजना' : 'કાર્ય યોજના')}
+                              </span>
+                            </div>
+                            <p className="text-xs text-gray-600 leading-relaxed">
+                              {entry.response.content}
+                            </p>
+                          </div>
+                        )}
+                      </motion.div>
+                    ))}
+                  </AnimatePresence>
+                </div>
+
+                {/* Pagination */}
+                {totalPages > 1 && (
+                  <div className="flex justify-center items-center gap-3 mt-8">
+                    <motion.button
+                      whileHover={{ scale: 1.05 }}
+                      whileTap={{ scale: 0.95 }}
+                      onClick={() => setPage(p => Math.max(1, p-1))}
+                      disabled={currentPage === 1}
+                      className="px-4 py-2 text-sm font-medium rounded-xl border border-gray-200 bg-white/70 backdrop-blur-sm disabled:opacity-40 hover:bg-white hover:shadow-sm transition-all duration-200"
+                    >
+                      {user.language==='hindi'?'पिछला':user.language==='gujarati'?'પાછળ':'Previous'}
+                    </motion.button>
+                    
+                    <div className="flex items-center gap-2">
+                      {Array.from({ length: totalPages }, (_, i) => i + 1).map(pageNum => (
+                        <motion.button
+                          key={pageNum}
+                          whileHover={{ scale: 1.1 }}
+                          whileTap={{ scale: 0.9 }}
+                          onClick={() => setPage(pageNum)}
+                          className={`w-8 h-8 rounded-xl text-sm font-medium transition-all duration-200 ${
+                            pageNum === currentPage 
+                              ? 'bg-gradient-to-r from-pink-500 to-rose-500 text-white shadow-sm' 
+                              : 'bg-white/70 text-gray-600 hover:bg-white hover:shadow-sm'
+                          }`}
+                        >
+                          {pageNum}
+                        </motion.button>
+                      ))}
+                    </div>
+
+                    <motion.button
+                      whileHover={{ scale: 1.05 }}
+                      whileTap={{ scale: 0.95 }}
+                      onClick={() => setPage(p => Math.min(totalPages, p+1))}
+                      disabled={currentPage === totalPages}
+                      className="px-4 py-2 text-sm font-medium rounded-xl border border-gray-200 bg-white/70 backdrop-blur-sm disabled:opacity-40 hover:bg-white hover:shadow-sm transition-all duration-200"
+                    >
+                      {user.language==='hindi'?'अगला':user.language==='gujarati'?'આગળ':'Next'}
+                    </motion.button>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
         </div>
-      )}
+      </div>
     </div>
   );
 };

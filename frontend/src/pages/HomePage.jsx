@@ -6,7 +6,7 @@ import AssistantChat from '../components/AssistantChat';
 import LanguageSelector from '../components/LanguageSelector';
 import { useUser } from '../context/UserContext';
 import { AuthContext } from '../context/AuthContext';
-import { createPlan } from '../api';
+// Plan creation now handled inside MoodSuggestionInput; no direct createPlan here.
 import toast from 'react-hot-toast';
 import { STRINGS } from '../i18n/strings';
 
@@ -26,26 +26,9 @@ const HomePage = () => {
 
   // Handle finalizing the plan from AssistantChat (optionally with start time)
   const handlePlanFinalized = async (data) => {
-    setIsLoading(true);
-    
-    try {
-      console.log('Plan finalized:', data);
-      // If createdPlan exists, we could update it with startTime here (optional v2)
-      if (!data?.plan && data?.planData) {
-        await createPlan(data.planData);
-      }
-      
-      // Show success and prompt to view in planner
-      setPlanCreated(true);
-      toast.success('Plan created successfully!');
-      
-    } catch (error) {
-      console.error('Error creating plan:', error);
-      console.error('Error response:', error.response?.data);
-      toast.error('Failed to create plan. Please try again.');
-    } finally {
-      setIsLoading(false);
-    }
+    // Child already created the plan; just update UI.
+    setPlanCreated(true);
+    toast.success('Plan created successfully!');
   };
 
   // Navigate to planner page

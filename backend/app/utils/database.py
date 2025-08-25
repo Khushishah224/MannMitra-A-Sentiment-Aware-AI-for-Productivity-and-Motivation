@@ -466,6 +466,9 @@ class Database:
                         hour = int(parts[0])
                         minute = int(parts[1])
                         update_data["scheduled_time"] = f"{hour:02d}:{minute:02d}"
+            # Ensure enums or other non-serializable types are converted to primitives
+            if "status" in update_data and hasattr(update_data["status"], "value"):
+                update_data["status"] = update_data["status"].value
         except Exception as _:
             # If normalization fails, drop scheduled_time to avoid corrupt data
             update_data.pop("scheduled_time", None)

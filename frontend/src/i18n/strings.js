@@ -97,6 +97,28 @@ export const STRINGS = {
       hindi: 'एक और योजना बनाएं',
       gujarati: 'બીજી યોજના બનાવો',
     },
+    conflict: {
+      overlap: {
+        english: 'Time overlaps with another task.',
+        hindi: 'समय किसी अन्य कार्य से टकरा रहा है।',
+        gujarati: 'સમય અન્ય કાર્ય સાથે અથડાઈ રહ્યો છે.'
+      },
+      nextFree: {
+        english: 'Next free time:',
+        hindi: 'अगला खाली समय:',
+        gujarati: 'આગલો ખાલી સમય:'
+      },
+      use: {
+        english: 'Use',
+        hindi: 'लागू करें',
+        gujarati: 'વાપરો'
+      },
+      autoShiftPrompt: {
+        english: 'Auto-shift overlapping tasks?',
+        hindi: 'ओवरलैप कार्यों को स्वतः शिफ्ट करें?',
+        gujarati: 'ઓવરલેપ થતા કાર્યોને આપમેળે ખસેડવા?' ,
+      }
+    }
   },
   assistant: {
     assistantIntro: {

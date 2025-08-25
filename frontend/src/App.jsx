@@ -7,6 +7,7 @@ import HomePage from './pages/HomePage';
 import HistoryPage from './pages/HistoryPage';
 import PlannerPage from './pages/PlannerPage';
 import ProfilePage from './pages/ProfilePage';
+import DecisionPage from './pages/DecisionPage';
 import LoginPage from './pages/Auth/LoginPage';
 import RegisterPage from './pages/Auth/RegisterPage';
 import PrivateRoute from './components/Auth/PrivateRoute';
@@ -27,6 +28,7 @@ function App() {
                 <Route path="/" element={<HomePage />} />
                 <Route path="/history" element={<HistoryPage />} />
                 <Route path="/planner" element={<PlannerPage />} />
+                <Route path="/decision" element={<DecisionPage />} />
                 <Route path="/profile" element={<ProfilePage />} />
               </Route>
             </Routes>
@@ -35,7 +37,7 @@ function App() {
           
           {/* Toast notifications */}
           <Toaster
-            position="bottom-center"
+            position="top-right"
             reverseOrder={false}
             gutter={8}
             toastOptions={{

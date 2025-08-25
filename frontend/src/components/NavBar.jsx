@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { FaHome, FaHistory, FaRegLightbulb, FaUser } from 'react-icons/fa';
+import { FaHome, FaHistory, FaRegLightbulb, FaUser, FaBalanceScale } from 'react-icons/fa';
 
 const NavBar = () => {
   return (
@@ -10,6 +10,7 @@ const NavBar = () => {
           <NavLink to="/" icon={<FaHome />} label="Home" />
           <NavLink to="/history" icon={<FaHistory />} label="History" />
           <NavLink to="/planner" icon={<FaRegLightbulb />} label="Planner" />
+          <NavLink to="/decision" icon={<FaBalanceScale />} label="Decision" />
           <NavLink to="/profile" icon={<FaUser />} label="Profile" />
         </div>
       </div>

@@ -91,7 +91,15 @@ async def analyze_mood(
         raise HTTPException(status_code=400, detail="Text cannot be empty")
     
     try:
-        result = analyze_sentiment(request.text, request.language)
+        # Use the HuggingFace model with fallback to TextBlob
+        from app.utils.sentiment import analyze_with_huggingface, get_empathetic_response
+        
+        # Parameter controls whether to attempt using HuggingFace
+        # If model isn't available, it will automatically fall back to TextBlob
+        result = analyze_with_huggingface(request.text, use_huggingface=True)
+        
+        # Get empathetic response based on mood
+        empathetic_response = get_empathetic_response(result["mood"])
         
         # Convert to MoodResponse
         return MoodResponse(
@@ -100,7 +108,8 @@ async def analyze_mood(
             mood_type=result["mood"],
             score=result.get("polarity", 0),
             language=request.language,
-            created_at=datetime.now()
+            created_at=datetime.now(),
+            empathetic_response=empathetic_response  # Added for Sprint 3
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error analyzing mood: {str(e)}")
@@ -132,16 +141,21 @@ async def get_mood_history(
     moods = moods[:limit]
     
     # Convert to MoodResponse objects
-    mood_responses = [
-        MoodResponse(
-            id=mood.get("id", str(mood.get("_id", ""))),
-            text=mood["text"],
-            mood_type=mood["mood_type"],
-            score=mood["score"],
-            language=mood["language"],
-            created_at=mood["created_at"]
-        )
-        for mood in moods
-    ]
+    mood_responses = []
+    for mood in moods:
+        try:
+            mood_responses.append(
+                MoodResponse(
+                    id=mood.get("id", str(mood.get("_id", ""))),
+                    text=mood.get("text", ""),
+                    mood_type=mood.get("mood_type") or mood.get("mood", "neutral"),
+                    score=mood.get("score", 0),
+                    language=mood.get("language", "english"),
+                    created_at=mood.get("created_at", datetime.now())
+                )
+            )
+        except Exception as e:
+            print(f"Error converting mood record: {e}, data: {mood}")
+            continue
     
     return MoodHistory(moods=mood_responses, count=len(mood_responses))

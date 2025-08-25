@@ -2,7 +2,8 @@ import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import MoodBadge from './MoodBadge';
 import SubjectSelector from './SubjectSelector';
-import { analyzeUserMood, trackMood, getMotivationalQuote, getPersonalizedPlan, getSubjectsByCategory } from '../api';
+import { analyzeUserMood, trackMood, getMotivationalQuote, getPersonalizedPlan, getSubjectsByCategory, getUserPlans, createPlan, updatePlan } from '../api';
+import { hasOverlap as utilHasOverlap, computeNextFree as utilComputeNextFree, computeChainShifts, applyChainShifts } from '../utils/timeConflicts';
 import { createUserSubject } from '../api/userSubjects';
 import toast from 'react-hot-toast';
 import { STRINGS } from '../i18n/strings';
@@ -19,6 +20,9 @@ const MoodSuggestionInput = ({ onComplete, language = 'english', userId }) => {
   const [taskDuration, setTaskDuration] = useState(20);
   const [startTime, setStartTime] = useState('');
   const [suggestion, setSuggestion] = useState(null);
+  const [reminderLead, setReminderLead] = useState('');
+  const [timeConflict, setTimeConflict] = useState(false);
+  const [suggestedFreeTime, setSuggestedFreeTime] = useState('');
   
   const placeholderText = STRINGS.flow.moodPlaceholder;
 
@@ -79,6 +83,7 @@ const MoodSuggestionInput = ({ onComplete, language = 'english', userId }) => {
       const normalized = {
         ...moodResult,
         mood: moodResult.mood || moodResult.mood_type,
+        empathetic_response: moodResult.empathetic_response || null, // Sprint 3: Store empathetic response
       };
       setDetectedMood(normalized);
       
@@ -122,15 +127,77 @@ const MoodSuggestionInput = ({ onComplete, language = 'english', userId }) => {
     setStep(3);
   };
   
-  // Step 3: Submit category and get personalized plan
+  // Local helper: check start time conflict with existing plans (client side) before calling backend
+  const hasLocalTimeConflict = async (proposedStartTime, duration) => {
+    if (!proposedStartTime) return false;
+    try {
+      const res = await getUserPlans();
+      return utilHasOverlap(res?.plans || [], proposedStartTime, duration);
+    } catch { return false; }
+  };
+
+  // Compute next free start time after desiredStart for given duration
+  const computeNextFreeStart = async (desiredStart, duration) => {
+    if (!desiredStart) return '';
+    try {
+      const res = await getUserPlans();
+      return utilComputeNextFree(res?.plans || [], desiredStart, duration);
+    } catch { return ''; }
+  };
+
+  // Localized conflict messages
+  const conflictStrings = {
+    english: {
+      conflict: 'This time overlaps with an existing task.',
+      suggestion: 'Next free time:',
+      apply: 'Use this time'
+    },
+    hindi: {
+      conflict: 'यह समय किसी मौजूदा कार्य से टकरा रहा है।',
+      suggestion: 'अगला खाली समय:',
+      apply: 'यह समय चुनें'
+    },
+    gujarati: {
+      conflict: 'આ સમય વર્તમાન કાર્ય સાથે અથડાય છે.',
+      suggestion: 'આગલો ખાલી સમય:',
+      apply: 'આ સમય લો'
+    }
+  };
+
+  // React to start time change to provide live conflict feedback
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      if (!startTime) { setTimeConflict(false); return; }
+      const conflict = await hasLocalTimeConflict(startTime, taskDuration);
+      if (active) setTimeConflict(conflict);
+      if (conflict) {
+        const nextFree = await computeNextFreeStart(startTime, taskDuration);
+        if (active) setSuggestedFreeTime(nextFree);
+      } else if (active) {
+        setSuggestedFreeTime('');
+      }
+    })();
+    return () => { active = false; };
+  }, [startTime, taskDuration]);
+
+  // Step 3: Submit category and get personalized plan (with start-time conflict pre-check)
   const handleCategorySubmit = async (e) => {
     e.preventDefault();
     if (!category) return;
-    
+
+    // Pre-check start time conflict (client side) for quicker UX
+    if (startTime) {
+      const conflict = await hasLocalTimeConflict(startTime, taskDuration);
+      if (conflict) {
+        toast.error('Selected start time overlaps with an existing task. Choose a different time.');
+        return; // Do not proceed
+      }
+    }
+
     setIsSubmitting(true);
-    
+
     try {
-      // Get personalized plan based on mood and category
       const planResult = await getPersonalizedPlan(
         (detectedMood?.mood || detectedMood?.mood_type || 'neutral'),
         category,
@@ -139,37 +206,85 @@ const MoodSuggestionInput = ({ onComplete, language = 'english', userId }) => {
         moodText,
         startTime || null
       );
-      
       setSuggestion(planResult);
-      
-      // Move to final step
       setStep(4);
-      
     } catch (error) {
       console.error('Error getting personalized plan:', error);
-      toast.error('Failed to create a plan. Please try again.');
+      // Custom time conflict surfacing if backend returned 409 inside generic error (future-proof)
+      const status = error?.response?.status;
+      const detail = error?.response?.data?.detail;
+      if (status === 409 && detail?.code === 'TIME_CONFLICT') {
+        const ep = detail.existing_plan || {};
+        toast.error(`Time conflict with: ${ep.title || 'another task'} at ${ep.scheduled_time || ''}`);
+      } else {
+        toast.error('Failed to get suggestion. Please adjust inputs.');
+      }
     } finally {
       setIsSubmitting(false);
     }
   };
 
   // Step 4: Accept the suggestion and complete
-  const handleAcceptSuggestion = () => {
-    if (onComplete && suggestion) {
-      // Backend has already created the plan in /suggestions/personalized-plan
-      // Pass the created plan upwards to avoid duplicate creation
-      onComplete({
-        createdPlan: suggestion.plan,
-        suggestionText: suggestion.suggestion,
-        responseText: suggestion.response_text,
-        mood: detectedMood,
-      });
+  const handleAcceptSuggestion = async () => {
+    if (!suggestion) return;
+    // Format title
+    const categoryLabel = category.charAt(0).toUpperCase() + category.slice(1);
+    const formattedTitle = subject ? `${categoryLabel} - ${subject}` : `${categoryLabel} Task`;
+    const planData = {
+      title: formattedTitle,
+      description: suggestion?.suggestion,
+      category,
+      subject: subject || null,
+      duration_minutes: suggestion?.plan?.duration_minutes || taskDuration,
+      status: 'pending',
+      scheduled_time: suggestion?.plan?.scheduled_time || (startTime || undefined),
+      ...(reminderLead !== '' ? { reminder_lead_minutes: Number(reminderLead) } : {}),
+    };
+
+    // Client-side conflict re-check if scheduled_time present
+    if (planData.scheduled_time) {
+      const conflict = await hasLocalTimeConflict(planData.scheduled_time, planData.duration_minutes);
+      if (conflict) {
+        // Offer auto-chain shift
+        try {
+          const res = await getUserPlans();
+          const shifts = computeChainShifts(res?.plans || [], planData.scheduled_time, planData.duration_minutes);
+          if (shifts.length > 0) {
+            const confirmChain = window.confirm(`Time conflict. Auto-shift ${shifts.length} subsequent task(s)?`);
+            if (confirmChain) {
+              await applyChainShifts(shifts, updatePlan);
+            } else {
+              const nextFree = await computeNextFreeStart(planData.scheduled_time, planData.duration_minutes);
+              if (nextFree) {
+                toast(`Try next free time ${nextFree}`, { icon: '⏱️' });
+              }
+              return;
+            }
+          } else {
+            toast.error('Time conflict detected. Pick another time before saving.');
+            return;
+          }
+        } catch { return; }
+      }
     }
 
-    toast.success('Your personalized plan has been created!');
-
-    // Reset form for another input if needed
-    // resetForm();
+    try {
+      // Create plan directly here to surface conflict errors properly
+      const created = await createPlan(planData);
+      toast.success('Your personalized plan has been created!');
+      if (onComplete) {
+        onComplete({ planData: created, suggestionText: suggestion.suggestion, responseText: suggestion.response_text, mood: detectedMood });
+      }
+    } catch (error) {
+      const status = error?.response?.status;
+      const detail = error?.response?.data?.detail;
+      if (status === 409 && detail?.code === 'TIME_CONFLICT') {
+        const ep = detail.existing_plan || {};
+        toast.error(`Time conflict with: ${ep.title || 'another task'} at ${ep.scheduled_time || ''}`);
+      } else {
+        toast.error('Failed to save plan. Please try again.');
+      }
+    }
   };
   
   // Reset the form to initial state
@@ -181,6 +296,7 @@ const MoodSuggestionInput = ({ onComplete, language = 'english', userId }) => {
     setCategory('study');
     setSubject('');
     setTaskDuration(20);
+    setReminderLead('');
     setSuggestion(null);
   };
   
@@ -298,15 +414,23 @@ const MoodSuggestionInput = ({ onComplete, language = 'english', userId }) => {
                     onChange={(value) => setSubject(value)}
                     onAddNew={async (newSubject) => {
                       try {
-                        await createUserSubject({
+                        const result = await createUserSubject({
                           name: newSubject,
                           category: category,
                           is_favorite: false
                         });
+                        
+                        // Immediately select the new subject without proceeding to next step
+                        if (result && result.name) {
+                          setSubject(result.name);
+                        }
+                        
                         toast.success(`Added new ${category} subject: ${newSubject}`);
+                        return true;  // Success
                       } catch (error) {
                         console.error('Error adding subject:', error);
                         toast.error('Failed to add custom subject');
+                        return false;  // Failure
                       }
                     }}
                   />
@@ -332,19 +456,49 @@ const MoodSuggestionInput = ({ onComplete, language = 'english', userId }) => {
               {/* Optional start time selection to schedule at creation */}
               <div className="flex items-center space-x-4">
                 <label className="text-gray-700 font-medium">{STRINGS.assistant.pickTime[language] || STRINGS.assistant.pickTime.english}</label>
+                <div className="flex-1">
+                  <input
+                    type="time"
+                    value={startTime}
+                    onChange={(e) => setStartTime(e.target.value)}
+                    className={`w-full p-2 border rounded-lg shadow-sm focus:ring-2 focus:ring-indigo-200 focus:border-indigo-300 ${timeConflict ? 'border-red-500 focus:border-red-500 focus:ring-red-200' : ''}`}
+                  />
+                  {timeConflict && (
+                    <div className="mt-1 space-y-1">
+                      <p className="text-xs text-red-600">{conflictStrings[language]?.conflict || conflictStrings.english.conflict}</p>
+                      {suggestedFreeTime && (
+                        <div className="flex items-center gap-2 text-xs">
+                          <span className="text-gray-600">{conflictStrings[language]?.suggestion || conflictStrings.english.suggestion} <span className="font-semibold">{suggestedFreeTime}</span></span>
+                          <button
+                            type="button"
+                            onClick={() => setStartTime(suggestedFreeTime)}
+                            className="px-2 py-0.5 bg-indigo-600 text-white rounded hover:bg-indigo-700"
+                          >{conflictStrings[language]?.apply || conflictStrings.english.apply}</button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex items-center space-x-4">
+                <label className="text-gray-700 font-medium">{STRINGS?.planner?.reminderLead?.[language] || 'Reminder (min before, optional)'}</label>
                 <input
-                  type="time"
-                  value={startTime}
-                  onChange={(e) => setStartTime(e.target.value)}
-                  className="flex-1 p-2 border rounded-lg shadow-sm focus:ring-2 focus:ring-indigo-200 focus:border-indigo-300"
+                  type="number"
+                  min="0"
+                  max="120"
+                  value={reminderLead}
+                  onChange={(e) => setReminderLead(e.target.value)}
+                  className="w-28 p-2 border rounded-lg shadow-sm focus:ring-2 focus:ring-indigo-200 focus:border-indigo-300"
+                  placeholder="e.g. 5"
                 />
               </div>
               
               <button
                 type="submit"
-                disabled={isSubmitting}
+                disabled={isSubmitting || timeConflict}
                 className={`w-full px-6 py-3 rounded-lg font-medium text-white shadow-md transition-colors
-                  ${isSubmitting ? 
+                  ${(isSubmitting || timeConflict) ? 
                     'bg-indigo-300 cursor-not-allowed' : 
                     'bg-indigo-600 hover:bg-indigo-700'}`}
               >

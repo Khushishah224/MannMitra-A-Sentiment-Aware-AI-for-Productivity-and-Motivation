@@ -51,6 +51,12 @@ async def get_mood_suggestion(request: SuggestionRequest, current_user: User = D
                 formatted_suggestion="Let's focus on a small task for a few minutes to build momentum."
             )
         
+        # If mood is on the lower-energy side, reduce default duration a bit
+        low_moods = {"tired", "lazy", "sad", "stressed"}
+        duration = request.duration or 20
+        if request.mood in low_moods:
+            duration = max(10, int(duration * 0.75))
+
         # Select a random suggestion
         suggestion = random.choice(suggestions)
         print(f"Selected suggestion: {suggestion}")
@@ -74,7 +80,7 @@ async def get_mood_suggestion(request: SuggestionRequest, current_user: User = D
             formatted_suggestion = formatted_suggestion.replace("{subject}", "this topic")
         
         if "{duration}" in formatted_suggestion:
-            formatted_suggestion = formatted_suggestion.replace("{duration}", str(request.duration))
+            formatted_suggestion = formatted_suggestion.replace("{duration}", str(duration))
         
         print(f"Formatted suggestion: {formatted_suggestion}")
         
@@ -83,7 +89,7 @@ async def get_mood_suggestion(request: SuggestionRequest, current_user: User = D
             suggestion=suggestion,
             category=request.category,
             subject=subject,
-            duration_minutes=request.duration,
+            duration_minutes=duration,
             formatted_suggestion=formatted_suggestion
         )
         
@@ -123,7 +129,7 @@ async def create_personalized_plan(request: SuggestionRequest, current_user: Use
         A personalized plan with suggested tasks
     """
     try:
-        # Get a personalized suggestion
+        # Get a personalized suggestion (already mood-adjusted)
         suggestion_response = await get_mood_suggestion(request, current_user)
         
         # Use provided start_time when available; otherwise, calculate a suggested one
@@ -155,28 +161,26 @@ async def create_personalized_plan(request: SuggestionRequest, current_user: Use
             "title": title,
             "description": suggestion_response.formatted_suggestion,
             "category": request.category,
-            "duration_minutes": request.duration,
+            "duration_minutes": suggestion_response.duration_minutes,
             "status": "pending",
             "user_id": current_user.id,
             # Store normalized HH:MM string
             "scheduled_time": start_time_str
         }
         
-        # Save the plan to the database
-        created_plan = db.create_plan(plan_data)
-        
-        # Add the formatted response
-        if suggestion_response.subject:
-            response_text = f"📝 Task: {suggestion_response.subject}\n🕒 Start at {start_time_str}?"
-        else:
-            response_text = f"📝 Task: {title}\n🕒 Start at {start_time_str}?"
-        
-        # Ensure created_plan contains scheduled_time string
-        created_plan["scheduled_time"] = start_time_str
+        # NOTE: Do not persist yet. Return a preview payload and let client accept explicitly.
+        preview_plan = plan_data.copy()
+        preview_plan["id"] = None
+        response_text = (
+            f"📝 Task: {suggestion_response.subject}\n🕒 Start at {start_time_str}?"
+            if suggestion_response.subject else
+            f"📝 Task: {title}\n🕒 Start at {start_time_str}?"
+        )
         return {
-            "plan": created_plan,
+            "plan": preview_plan,
             "suggestion": suggestion_response.formatted_suggestion,
-            "response_text": response_text
+            "response_text": response_text,
+            "preview": True
         }
     except Exception as e:
         import traceback

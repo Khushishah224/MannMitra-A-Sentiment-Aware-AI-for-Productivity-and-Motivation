@@ -14,13 +14,19 @@ class PlanStatus(str, Enum):
     IN_PROGRESS = "in_progress"
     COMPLETED = "completed"
     CANCELLED = "cancelled"
+    MISSED = "missed"
+    SNOOZED = "snoozed"
 
 class PlanBase(BaseModel):
     title: str
     description: Optional[str] = None
     category: PlanCategory
+    subject: Optional[str] = None  # Added subject field to store the selected subject
     duration_minutes: int = Field(default=30, ge=5, le=180)
     status: PlanStatus = PlanStatus.PENDING
+    # Optional reminder lead time in minutes (fire reminder lead minutes before scheduled_time)
+    reminder_lead_minutes: Optional[int] = Field(default=None, ge=0, le=120)
+    auto_rescheduled: Optional[bool] = False
 
 class PlanCreate(PlanBase):
     user_id: Optional[str] = None
@@ -38,6 +44,8 @@ class PlanUpdate(BaseModel):
     duration_minutes: Optional[int] = Field(default=None, ge=5, le=180)
     status: Optional[PlanStatus] = None
     scheduled_time: Optional[time] = None
+    reminder_lead_minutes: Optional[int] = Field(default=None, ge=0, le=120)
+    auto_rescheduled: Optional[bool] = None
 
 class PlanInDB(PlanBase):
     id: str

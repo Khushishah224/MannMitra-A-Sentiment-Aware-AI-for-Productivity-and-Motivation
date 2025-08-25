@@ -48,6 +48,7 @@ class MoodInDB(MoodBase):
 class MoodResponse(MoodBase):
     id: str
     created_at: datetime
+    empathetic_response: Optional[str] = None  # Added for Sprint 3 empathy layer
 
 class MoodHistory(BaseModel):
     moods: List[MoodResponse]

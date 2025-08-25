@@ -5,10 +5,12 @@ import LanguageSelector from '../components/LanguageSelector';
 import TaskList from '../components/TaskList';
 import MoodBadge from '../components/MoodBadge';
 import CustomSubjectForm from '../components/CustomSubjectForm';
+import TaskForm from '../components/TaskForm';
 import { useUser } from '../context/UserContext';
 import { AuthContext } from '../context/AuthContext';
-import { createPlan, getUserPlans } from '../api';
-import { FaPlus, FaRegLightbulb, FaFilter, FaTags } from 'react-icons/fa';
+import { createPlan, getUserPlans, updatePlan } from '../api';
+import { hasOverlap as utilHasOverlap, computeNextFree as utilComputeNextFree, computeChainShifts, applyChainShifts } from '../utils/timeConflicts';
+import { FaPlus, FaRegLightbulb, FaFilter, FaTags, FaTimes } from 'react-icons/fa';
 import toast from 'react-hot-toast';
 
 const PlannerPage = () => {
@@ -27,7 +29,11 @@ const PlannerPage = () => {
   const [filterCategory, setFilterCategory] = useState('all');
   const [showCustomSubjectForm, setShowCustomSubjectForm] = useState(false);
   const [selectedCustomCategory, setSelectedCustomCategory] = useState('study');
+  const [createStartTime, setCreateStartTime] = useState('');
+  const [createTimeConflict, setCreateTimeConflict] = useState(false);
+  const [createSuggestedFree, setCreateSuggestedFree] = useState('');
   const remindedRef = useRef({}); // planId -> true
+  const autoReschedNotified = useRef(new Set()); // planIds already notified for auto-reschedule
 
   const language = userPrefs?.language || 'english';
 
@@ -38,6 +44,41 @@ const PlannerPage = () => {
     }
   }, [user]);
 
+  // Poll plans periodically to catch background auto-reschedules
+  useEffect(() => {
+    if (!user) return;
+    const timer = setInterval(async () => {
+      try {
+        const response = await getUserPlans();
+        const plans = response.plans || [];
+        let changed = false;
+        
+        // Comment out toast notifications for auto-rescheduled tasks
+        /* 
+        plans.forEach((p) => {
+          // Only show notification for newly detected auto-rescheduled tasks
+          if (p?.auto_rescheduled && !autoReschedNotified.current.has(p.id)) {
+            autoReschedNotified.current.add(p.id);
+            // Show a more descriptive message if conflict was resolved
+            if (p.conflict_resolved) {
+              toast?.(`Auto-rescheduled (conflict resolved): ${p.title} to ${p.scheduled_time}`, { icon: '🔄' });
+            } else {
+              toast?.(`Auto-rescheduled: ${p.title} to ${p.scheduled_time}`, { icon: '📅' });
+            }
+          }
+        });
+        */
+        
+        // Update tasks if there is any delta in length or scheduled_time fields differ
+        if (JSON.stringify(plans) !== JSON.stringify(tasks)) {
+          changed = true;
+        }
+        if (changed) setTasks(plans);
+      } catch (_) {}
+    }, 120000); // 2 minutes
+    return () => clearInterval(timer);
+  }, [user, tasks]);
+
   // Ask for Notification permission once
   useEffect(() => {
     try {
@@ -47,7 +88,7 @@ const PlannerPage = () => {
     } catch (_) {}
   }, []);
 
-  // Lightweight reminder: toast when scheduled_time is reached
+  // Lightweight reminder: toast when scheduled_time is reached (or reminder lead minutes before)
   useEffect(() => {
     if (!tasks || tasks.length === 0) return;
     const timer = setInterval(() => {
@@ -59,8 +100,21 @@ const PlannerPage = () => {
         if (!t || !t.scheduled_time || remindedRef.current[t.id]) return;
         const st = typeof t.scheduled_time === 'string' ? t.scheduled_time : '';
         if (!st) return;
-        // Trigger when exact minute matches and task is actionable
-        if ((t.status === 'pending' || t.status === 'in_progress') && st === current) {
+        // Trigger when exact minute matches or reminder lead window, and task is actionable
+        let shouldNotify = st === current;
+        try {
+          if (!shouldNotify && typeof t.reminder_lead_minutes === 'number') {
+            const [th, tm] = st.split(':').map(Number);
+            const scheduled = new Date();
+            scheduled.setHours(th || 0, tm || 0, 0, 0);
+            const leadMs = (t.reminder_lead_minutes || 0) * 60 * 1000;
+            const diff = scheduled.getTime() - now.getTime();
+            // If we're within this minute window of lead time
+            if (diff <= leadMs && diff > leadMs - 60000) shouldNotify = true;
+          }
+        } catch (_) {}
+
+        if ((t.status === 'pending' || t.status === 'in_progress') && shouldNotify) {
           remindedRef.current[t.id] = true;
           try {
             // Toast reminder (non-blocking)
@@ -82,7 +136,24 @@ const PlannerPage = () => {
     setIsLoading(true);
     try {
       const response = await getUserPlans();
-      setTasks(response.plans || []);
+      const plans = response.plans || [];
+      // Notify user for any newly auto-rescheduled tasks - disabled
+      try {
+        plans.forEach((p) => {
+          if (p?.auto_rescheduled && !autoReschedNotified.current.has(p.id)) {
+            autoReschedNotified.current.add(p.id);
+            // Disabled toast messages
+            /*
+            if (p.conflict_resolved) {
+              toast?.(`Auto-rescheduled (conflict resolved): ${p.title} to ${p.scheduled_time}`, { icon: '🔄' });
+            } else {
+              toast?.(`Auto-rescheduled: ${p.title} to ${p.scheduled_time}`, { icon: '📅' });
+            }
+            */
+          }
+        });
+      } catch (_) {}
+      setTasks(plans);
     } catch (error) {
       console.error('Error fetching plans:', error);
       toast.error('Failed to load your tasks. Please try again.');
@@ -134,6 +205,32 @@ const PlannerPage = () => {
     }
   };
 
+  // Local helper: compute conflict for proposed start time
+  const hasLocalTimeConflict = async (proposedStartTime, duration) => {
+    if (!proposedStartTime) return false;
+    try { const res = await getUserPlans(); return utilHasOverlap(res?.plans||[], proposedStartTime, duration); } catch { return false; }
+  };
+
+  const computeNextFreeStart = async (desiredStart, duration) => {
+    if (!desiredStart) return '';
+    try { const res = await getUserPlans(); return utilComputeNextFree(res?.plans||[], desiredStart, duration); } catch { return ''; }
+  };
+
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      if (!createStartTime) { setCreateTimeConflict(false); setCreateSuggestedFree(''); return; }
+      const conflict = await hasLocalTimeConflict(createStartTime, newTask.duration_minutes || 30);
+      if (!active) return;
+      setCreateTimeConflict(conflict);
+      if (conflict) {
+        const nextFree = await computeNextFreeStart(createStartTime, newTask.duration_minutes || 30);
+        if (active) setCreateSuggestedFree(nextFree);
+      } else setCreateSuggestedFree('');
+    })();
+    return () => { active = false; };
+  }, [createStartTime, newTask.duration_minutes]);
+
   // Submit new task
   const handleSubmitTask = async (e) => {
     e.preventDefault();
@@ -142,49 +239,162 @@ const PlannerPage = () => {
       toast.error('Please enter a task title.');
       return;
     }
+    if (createTimeConflict) {
+      toast.error(language==='hindi' ? 'समय संघर्ष को हल करें।' : language==='gujarati' ? 'સમય સંઘર્ષ ઉકેલો.' : 'Resolve time conflict before creating.');
+      return;
+    }
 
     setIsLoading(true);
     try {
       await createPlan({
         ...newTask,
-        status: 'pending'
+        status: 'pending',
+        ...(createStartTime ? { scheduled_time: createStartTime } : {})
       });
-      
       toast.success('Task created successfully!');
       setIsCreating(false);
-      
-      // Reset form
-      setNewTask({
-        title: '',
-        description: '',
-        category: 'study',
-        duration_minutes: 30,
-      });
-      
-      // Refresh tasks
+      setNewTask({ title: '', description: '', category: 'study', duration_minutes: 30 });
+      setCreateStartTime('');
       fetchUserPlans();
     } catch (error) {
-      console.error('Error creating task:', error);
-      toast.error('Failed to create task. Please try again.');
+      // First check for 409 time conflict
+      const status = error?.response?.status;
+      const detail = error?.response?.data?.detail;
+      
+      // Handle time conflict (409)
+      if (status === 409 && detail?.code === 'TIME_CONFLICT') {
+        const ep = detail.existing_plan || {};
+        const existingTitle = ep.title || 'Existing task';
+        const existingTime = ep.scheduled_time || '';
+        // Offer quick choices: reschedule existing by +newTask.duration OR reschedule new by +newTask.duration
+        const choice = window.confirm(`${existingTitle} at ${existingTime} overlaps.
+Click OK to reschedule existing by +${newTask.duration_minutes} min, or Cancel to reschedule the new task by +${newTask.duration_minutes} min.`);
+        try {
+          if (choice && ep.id) {
+            // Reschedule existing: push by duration
+            // Apply chain shift starting from existing overlapping task
+            const plansRes = await getUserPlans();
+            const shifts = computeChainShifts(plansRes?.plans||[], existingTime, ep.duration_minutes || newTask.duration_minutes || 0);
+            if (shifts.length>0) {
+              await applyChainShifts(shifts, updatePlan);
+              toast.success('Chain shifted. Try creating again.');
+            } else {
+              toast.success('Existing task moved. Retry.');
+            }
+          } else {
+            // Reschedule new: push by duration and retry
+            const nextFree = await computeNextFreeStart(createStartTime || existingTime, newTask.duration_minutes || 30) || '';
+            const payload = { ...newTask, status: 'pending', ...(nextFree? { scheduled_time: nextFree } : {}) };
+            await createPlan(payload);
+            toast.success(nextFree? `Created at next free ${nextFree}` : 'New task created.');
+            setIsCreating(false);
+            setNewTask({ title: '', description: '', category: 'study', duration_minutes: 30 });
+            fetchUserPlans();
+          }
+        } catch (e2) {
+          console.error('Conflict resolution failed:', e2);
+          toast.error('Could not resolve schedule conflict. Please adjust times manually.');
+        }
+      } 
+      // Handle 500 errors that contain time conflict information 
+      else if (status === 500 && error?.response?.data?.detail) {
+        // Try to extract conflict information from 500 error
+        try {
+          const errorDetail = error.response.data.detail;
+          let conflictInfo;
+          
+          // Check if this is a string that contains JSON
+          if (typeof errorDetail === 'string' && errorDetail.includes('TIME_CONFLICT')) {
+            // Try to parse the string
+            const match = errorDetail.match(/{.*}/s);
+            if (match) {
+              conflictInfo = JSON.parse(match[0]);
+            }
+          }
+          
+          if (conflictInfo && conflictInfo.code === 'TIME_CONFLICT') {
+            const ep = conflictInfo.existing_plan || {};
+            const existingTitle = ep.title || 'Existing task';
+            const existingTime = ep.scheduled_time || '';
+            
+            toast.error(`Time conflict: ${existingTitle} at ${existingTime} overlaps with your new task.`);
+            toast.error('Please choose a different time or adjust duration.');
+          } else {
+            toast.error('Time conflict detected. Please choose a different time.');
+          }
+        } catch (e) {
+          console.error('Error parsing conflict info:', e);
+          toast.error('Time conflict detected. Please choose a different time.');
+        }
+      } else {
+        console.error('Error creating task:', error);
+        toast.error('Failed to create task. Please try again.');
+      }
     } finally {
       setIsLoading(false);
     }
   };
 
   // Filter tasks
-  const getFilteredTasks = () => {
-    let filtered = [...tasks];
-    
-    if (filterStatus !== 'all') {
-      filtered = filtered.filter(task => task.status === filterStatus);
+  const sortTasksByTimeAndStatus = (tasks) => {
+  return [...tasks].sort((a, b) => {
+    // Priority order: in_progress > pending > snoozed > completed > cancelled > missed
+    const statusPriority = {
+      'in_progress': 1,
+      'pending': 2,  
+      'snoozed': 3,
+      'completed': 4,
+      'cancelled': 5,
+      'missed': 6
+    };
+
+    const aStatusPriority = statusPriority[a.status] || 7;
+    const bStatusPriority = statusPriority[b.status] || 7;
+
+    // First sort by status priority
+    if (aStatusPriority !== bStatusPriority) {
+      return aStatusPriority - bStatusPriority;
     }
+
+    // For tasks with same status, sort by time
+    const aTime = a.scheduled_time ? a.scheduled_time : '99:99'; // No time goes to end
+    const bTime = b.scheduled_time ? b.scheduled_time : '99:99';
     
-    if (filterCategory !== 'all') {
-      filtered = filtered.filter(task => task.category === filterCategory);
+    // Convert time strings to comparable format (HH:MM)
+    const timeToMinutes = (timeStr) => {
+      if (!timeStr || timeStr === '99:99') return 9999;
+      const [hours, minutes] = timeStr.split(':').map(Number);
+      return hours * 60 + minutes;
+    };
+
+    const aMinutes = timeToMinutes(aTime);
+    const bMinutes = timeToMinutes(bTime);
+
+    if (aMinutes !== bMinutes) {
+      return aMinutes - bMinutes;
     }
-    
-    return filtered;
-  };
+
+    // If same time and status, sort by title alphabetically
+    return a.title.localeCompare(b.title);
+  });
+};
+
+// Update your getFilteredTasks function to include sorting:
+const getFilteredTasks = () => {
+  let filtered = [...tasks];
+  
+  if (filterStatus !== 'all') {
+    filtered = filtered.filter(task => task.status === filterStatus);
+  }
+  
+  if (filterCategory !== 'all') {
+    filtered = filtered.filter(task => task.category === filterCategory);
+  }
+  
+  // Apply sorting
+  return sortTasksByTimeAndStatus(filtered);
+};
+
 
   // Localized strings
   const strings = {
@@ -265,35 +475,43 @@ const PlannerPage = () => {
   const t = strings[language] || strings.english;
 
   return (
-    <div className="container mx-auto px-4 pb-20 pt-4">
-      <Header title={t.title} />
-
-      <div className="mb-6 flex flex-col md:flex-row md:items-center md:justify-between">
-        <div className="mb-4 md:mb-0">
-          <LanguageSelector 
-            language={language}
-            onChange={handleLanguageChange}
-          />
-        </div>
-
-        <div className="flex space-x-2">
-          <button
-            onClick={toggleCreateTask}
-            className="bg-indigo-600 text-white px-4 py-2 rounded-lg flex items-center space-x-2 hover:bg-indigo-700 transition-colors"
-          >
-            <FaPlus />
-            <span>{isCreating ? t.cancel : t.createTask}</span>
-          </button>
-          <button
-            onClick={toggleCustomSubjectForm}
-            className="bg-green-600 text-white px-4 py-2 rounded-lg flex items-center space-x-2 hover:bg-green-700 transition-colors"
-          >
-            <FaTags />
-            <span>{showCustomSubjectForm ? t.hideCustomTasks : t.customTasks}</span>
-          </button>
-        </div>
+    <div className="max-w-5xl mx-auto px-4 lg:px-8 py-6 pb-24">
+      {/* Top Section */}
+      <div className="flex justify-between items-start mb-6">
+        <Header title={t.title} />
+        <LanguageSelector 
+          language={language}
+          onChange={handleLanguageChange}
+        />
       </div>
 
+      {/* Action Buttons */}
+      <div className="flex flex-col sm:flex-row gap-3 mb-6">
+        <button
+          onClick={toggleCreateTask}
+          className={`flex-1 px-4 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 flex items-center justify-center gap-2 ${
+            isCreating 
+              ? 'bg-gray-100 text-gray-700 hover:bg-gray-200' 
+              : 'bg-indigo-600 text-white hover:bg-indigo-700'
+          }`}
+        >
+          {isCreating ? <FaTimes className="text-sm" /> : <FaPlus className="text-sm" />}
+          <span>{isCreating ? t.cancel : t.createTask}</span>
+        </button>
+        <button
+          onClick={toggleCustomSubjectForm}
+          className={`flex-1 px-4 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 flex items-center justify-center gap-2 ${
+            showCustomSubjectForm 
+              ? 'bg-gray-100 text-gray-700 hover:bg-gray-200' 
+              : 'bg-green-600 text-white hover:bg-green-700'
+          }`}
+        >
+          {showCustomSubjectForm ? <FaTimes className="text-sm" /> : <FaTags className="text-sm" />}
+          <span>{showCustomSubjectForm ? t.hideCustomTasks : t.customTasks}</span>
+        </button>
+      </div>
+
+      {/* Create Task Form */}
       <AnimatePresence>
         {isCreating && (
           <motion.div
@@ -301,121 +519,47 @@ const PlannerPage = () => {
             animate={{ opacity: 1, height: 'auto' }}
             exit={{ opacity: 0, height: 0 }}
             transition={{ duration: 0.3 }}
-            className="bg-white rounded-lg shadow-md p-6 mb-6"
+            className="bg-white rounded-xl border border-gray-100 shadow-sm p-5 mb-6"
           >
-            <form onSubmit={handleSubmitTask} className="space-y-4">
-              <div>
-                <label htmlFor="title" className="block text-sm font-medium text-gray-700">
-                  {t.taskTitle}
-                </label>
-                <input
-                  type="text"
-                  id="title"
-                  name="title"
-                  value={newTask.title}
-                  onChange={handleInputChange}
-                  className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
-                  required
-                />
-              </div>
-
-              <div>
-                <label htmlFor="description" className="block text-sm font-medium text-gray-700">
-                  {t.description}
-                </label>
-                <textarea
-                  id="description"
-                  name="description"
-                  value={newTask.description}
-                  onChange={handleInputChange}
-                  className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 resize-none h-24"
-                />
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label htmlFor="category" className="block text-sm font-medium text-gray-700">
-                    {t.category}
-                  </label>
-                  <select
-                    id="category"
-                    name="category"
-                    value={newTask.category}
-                    onChange={handleInputChange}
-                    className="mt-1 block w-full pl-3 pr-10 py-2 text-base border border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md"
-                  >
-                    <option value="study">{t.study}</option>
-                    <option value="work">{t.work}</option>
-                    <option value="personal">{t.personal}</option>
-                    <option value="other">{t.other}</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label htmlFor="duration_minutes" className="block text-sm font-medium text-gray-700">
-                    {t.duration}
-                  </label>
-                  <input
-                    type="number"
-                    id="duration_minutes"
-                    name="duration_minutes"
-                    min="5"
-                    max="180"
-                    value={newTask.duration_minutes}
-                    onChange={handleInputChange}
-                    className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
-                  />
-                </div>
-              </div>
-
-              <div className="flex justify-end space-x-3 pt-4">
-                <button
-                  type="button"
-                  onClick={toggleCreateTask}
-                  className="px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
-                >
-                  {t.cancel}
-                </button>
-                <button
-                  type="submit"
-                  disabled={isLoading || !newTask.title.trim()}
-                  className={`px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 ${
-                    (isLoading || !newTask.title.trim()) ? 'opacity-70 cursor-not-allowed' : ''
-                  }`}
-                >
-                  {isLoading ? '...' : t.create}
-                </button>
-              </div>
-            </form>
+            <TaskForm
+              task={newTask}
+              onTaskChange={setNewTask}
+              onSubmit={handleSubmitTask}
+              onCancel={toggleCreateTask}
+              isLoading={isLoading}
+              language={language}
+            />
           </motion.div>
         )}
       </AnimatePresence>
 
       {/* Filters */}
-      <div className="bg-white rounded-lg shadow-md p-4 mb-6">
-        <div className="flex flex-col md:flex-row items-start md:items-center space-y-3 md:space-y-0 md:space-x-4">
-          <div className="flex items-center">
-            <FaFilter className="text-gray-500 mr-2" />
-            <span className="text-gray-700">{t.filterBy}:</span>
+      <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4 mb-6">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
+          <div className="flex items-center gap-2">
+            <FaFilter className="text-gray-400 text-sm" />
+            <span className="text-sm font-medium text-gray-700">{t.filterBy}:</span>
           </div>
           
           <div className="flex flex-wrap gap-2">
             <select
               value={filterStatus}
               onChange={(e) => setFilterStatus(e.target.value)}
-              className="px-3 py-1 border border-gray-300 rounded-md text-sm"
+              className="px-3 py-1.5 border border-gray-200 rounded-lg text-sm bg-gray-50 focus:bg-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all duration-200"
             >
               <option value="all">{t.allTasks}</option>
               <option value="pending">{t.pending}</option>
               <option value="in_progress">{t.inProgress}</option>
               <option value="completed">{t.completed}</option>
               <option value="cancelled">{t.cancelled}</option>
+              <option value="snoozed">Snoozed</option>
+              <option value="missed">Missed</option>
             </select>
             
             <select
               value={filterCategory}
               onChange={(e) => setFilterCategory(e.target.value)}
-              className="px-3 py-1 border border-gray-300 rounded-md text-sm"
+              className="px-3 py-1.5 border border-gray-200 rounded-lg text-sm bg-gray-50 focus:bg-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all duration-200"
             >
               <option value="all">{t.allCategories}</option>
               <option value="study">{t.study}</option>
@@ -437,27 +581,33 @@ const PlannerPage = () => {
             transition={{ duration: 0.3 }}
             className="mb-6"
           >
-            <div className="bg-white rounded-lg shadow-md p-6">
+            <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-5">
               <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-2">
+                <label className="block text-sm font-medium text-gray-700 mb-3">
                   Select category to manage:
                 </label>
-                <div className="flex space-x-2">
+                <div className="flex flex-wrap gap-2">
                   <button 
                     onClick={() => setSelectedCustomCategory('study')}
-                    className={`px-3 py-2 rounded ${selectedCustomCategory === 'study' ? 'bg-blue-600 text-white' : 'bg-gray-200'}`}
+                    className={`px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
+                      selectedCustomCategory === 'study' ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    }`}
                   >
                     {t.study}
                   </button>
                   <button 
                     onClick={() => setSelectedCustomCategory('work')}
-                    className={`px-3 py-2 rounded ${selectedCustomCategory === 'work' ? 'bg-blue-600 text-white' : 'bg-gray-200'}`}
+                    className={`px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
+                      selectedCustomCategory === 'work' ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    }`}
                   >
                     {t.work}
                   </button>
                   <button 
                     onClick={() => setSelectedCustomCategory('personal')}
-                    className={`px-3 py-2 rounded ${selectedCustomCategory === 'personal' ? 'bg-blue-600 text-white' : 'bg-gray-200'}`}
+                    className={`px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
+                      selectedCustomCategory === 'personal' ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    }`}
                   >
                     {t.personal}
                   </button>
@@ -475,11 +625,11 @@ const PlannerPage = () => {
       </AnimatePresence>
 
       {/* Task List */}
-      <div className="bg-white rounded-lg shadow-md p-6">
+      <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-5">
         {isLoading && !isCreating ? (
-          <div className="text-center py-8">
-            <div className="inline-block animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-indigo-600 mb-2"></div>
-            <p className="text-gray-600">{t.loading}</p>
+          <div className="text-center py-12">
+            <div className="inline-block animate-spin rounded-full h-8 w-8 border-2 border-indigo-600 border-t-transparent mb-4"></div>
+            <p className="text-sm text-gray-600">{t.loading}</p>
           </div>
         ) : (
           <TaskList
