@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import Header from '../components/Header';
 import LanguageSelector from '../components/LanguageSelector';
 import TaskList from '../components/TaskList';
+import CalendarAnalytics from '../components/CalendarAnalytics';
 import MoodBadge from '../components/MoodBadge';
 import CustomSubjectForm from '../components/CustomSubjectForm';
 import TaskForm from '../components/TaskForm';
@@ -27,6 +28,17 @@ const PlannerPage = () => {
   const [isCreating, setIsCreating] = useState(false);
   const [filterStatus, setFilterStatus] = useState('all');
   const [filterCategory, setFilterCategory] = useState('all');
+  const [showCalendar, setShowCalendar] = useState(false);
+  const [selectedDate, setSelectedDate] = useState(null); // YYYY-MM-DD
+
+  // Helper to get local (not UTC) YYYY-MM-DD string
+  const getLocalYMD = () => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  };
+
+  const todayLocalYMD = getLocalYMD();
+  const todayDisplay = (() => { const d=new Date(); return `${d.getDate()}-${d.getMonth()+1}-${d.getFullYear()}`; })();
   const [showCustomSubjectForm, setShowCustomSubjectForm] = useState(false);
   const [selectedCustomCategory, setSelectedCustomCategory] = useState('study');
   const [createStartTime, setCreateStartTime] = useState('');
@@ -251,6 +263,8 @@ const PlannerPage = () => {
         status: 'pending',
         ...(createStartTime ? { scheduled_time: createStartTime } : {})
       });
+  // Fire and forget peer pulse representing current activity
+  try { fetch(`${import.meta.env.VITE_BACKEND_BASE_URL || 'http://localhost:8000'}/peerpulse`, { method:'POST', headers:{'Content-Type':'application/json', 'Authorization': `Bearer ${localStorage.getItem('token')||''}`}, body: JSON.stringify({ activity: newTask.category, mood: 'focused' }) }); } catch(_) {}
       toast.success('Task created successfully!');
       setIsCreating(false);
       setNewTask({ title: '', description: '', category: 'study', duration_minutes: 30 });
@@ -382,6 +396,10 @@ Click OK to reschedule existing by +${newTask.duration_minutes} min, or Cancel t
 // Update your getFilteredTasks function to include sorting:
 const getFilteredTasks = () => {
   let filtered = [...tasks];
+
+  // Date filter: if selectedDate set show only tasks whose scheduled_date matches; otherwise default to today only for "Today's Tasks" concept
+  const activeDate = selectedDate || todayLocalYMD;
+  filtered = filtered.filter(task => (task.scheduled_date || todayLocalYMD) === activeDate);
   
   if (filterStatus !== 'all') {
     filtered = filtered.filter(task => task.status === filterStatus);
@@ -486,7 +504,7 @@ const getFilteredTasks = () => {
       </div>
 
       {/* Action Buttons */}
-      <div className="flex flex-col sm:flex-row gap-3 mb-6">
+  <div className="flex flex-col sm:flex-row gap-3 mb-6">
         <button
           onClick={toggleCreateTask}
           className={`flex-1 px-4 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 flex items-center justify-center gap-2 ${
@@ -508,6 +526,15 @@ const getFilteredTasks = () => {
         >
           {showCustomSubjectForm ? <FaTimes className="text-sm" /> : <FaTags className="text-sm" />}
           <span>{showCustomSubjectForm ? t.hideCustomTasks : t.customTasks}</span>
+        </button>
+        <button
+          onClick={()=> setShowCalendar(s => !s)}
+          className={`flex-1 px-4 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 flex items-center justify-center gap-2 ${
+            showCalendar ? 'bg-gray-100 text-gray-700 hover:bg-gray-200' : 'bg-purple-600 text-white hover:bg-purple-700'
+          }`}
+        >
+          {showCalendar ? <FaTimes className="text-sm" /> : <FaFilter className="text-sm" />}
+          <span>{showCalendar ? 'Hide Calendar' : 'Show Calendar'}</span>
         </button>
       </div>
 
@@ -534,42 +561,55 @@ const getFilteredTasks = () => {
       </AnimatePresence>
 
       {/* Filters */}
-      <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4 mb-6">
-        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
-          <div className="flex items-center gap-2">
-            <FaFilter className="text-gray-400 text-sm" />
-            <span className="text-sm font-medium text-gray-700">{t.filterBy}:</span>
+      {showCalendar && (
+        <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4 mb-6">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
+            <div className="flex items-center gap-2">
+              <FaFilter className="text-gray-400 text-sm" />
+              <span className="text-sm font-medium text-gray-700">{t.filterBy}:</span>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <select
+                value={filterStatus}
+                onChange={(e) => setFilterStatus(e.target.value)}
+                className="px-3 py-1.5 border border-gray-200 rounded-lg text-sm bg-gray-50 focus:bg-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all duration-200"
+              >
+                <option value="all">{t.allTasks}</option>
+                <option value="pending">{t.pending}</option>
+                <option value="in_progress">{t.inProgress}</option>
+                <option value="completed">{t.completed}</option>
+                <option value="cancelled">{t.cancelled}</option>
+                <option value="snoozed">Snoozed</option>
+                <option value="missed">Missed</option>
+              </select>
+              <select
+                value={filterCategory}
+                onChange={(e) => setFilterCategory(e.target.value)}
+                className="px-3 py-1.5 border border-gray-200 rounded-lg text-sm bg-gray-50 focus:bg-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all duration-200"
+              >
+                <option value="all">{t.allCategories}</option>
+                <option value="study">{t.study}</option>
+                <option value="work">{t.work}</option>
+                <option value="personal">{t.personal}</option>
+                <option value="other">{t.other}</option>
+              </select>
+            </div>
           </div>
-          
-          <div className="flex flex-wrap gap-2">
-            <select
-              value={filterStatus}
-              onChange={(e) => setFilterStatus(e.target.value)}
-              className="px-3 py-1.5 border border-gray-200 rounded-lg text-sm bg-gray-50 focus:bg-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all duration-200"
-            >
-              <option value="all">{t.allTasks}</option>
-              <option value="pending">{t.pending}</option>
-              <option value="in_progress">{t.inProgress}</option>
-              <option value="completed">{t.completed}</option>
-              <option value="cancelled">{t.cancelled}</option>
-              <option value="snoozed">Snoozed</option>
-              <option value="missed">Missed</option>
-            </select>
-            
-            <select
-              value={filterCategory}
-              onChange={(e) => setFilterCategory(e.target.value)}
-              className="px-3 py-1.5 border border-gray-200 rounded-lg text-sm bg-gray-50 focus:bg-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all duration-200"
-            >
-              <option value="all">{t.allCategories}</option>
-              <option value="study">{t.study}</option>
-              <option value="work">{t.work}</option>
-              <option value="personal">{t.personal}</option>
-              <option value="other">{t.other}</option>
-            </select>
+          <div className="mt-4">
+            <CalendarAnalytics
+              selectedDate={selectedDate}
+              onSelectDate={(d)=> setSelectedDate(d===selectedDate? null : d)}
+            />
+            <div className="mt-3 text-xs text-gray-600 flex items-center gap-2">
+              <span className="font-medium">Viewing:</span>
+              <span className="px-2 py-1 rounded bg-indigo-50 border border-indigo-100">{selectedDate || new Date().toISOString().slice(0,10)}</span>
+              {selectedDate && (
+                <button onClick={()=> setSelectedDate(null)} className="text-indigo-600 hover:underline">Reset to Today</button>
+              )}
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
       {/* Custom Subject Form */}
       <AnimatePresence>
@@ -626,6 +666,12 @@ const getFilteredTasks = () => {
 
       {/* Task List */}
       <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-5">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-sm font-semibold text-gray-700">
+            {selectedDate ? `Tasks on ${selectedDate}` : `Today's Tasks (${todayDisplay})`}
+          </h2>
+          {selectedDate && <button onClick={()=> setSelectedDate(null)} className="text-[11px] text-indigo-600 hover:underline">Back to Today</button>}
+        </div>
         {isLoading && !isCreating ? (
           <div className="text-center py-12">
             <div className="inline-block animate-spin rounded-full h-8 w-8 border-2 border-indigo-600 border-t-transparent mb-4"></div>

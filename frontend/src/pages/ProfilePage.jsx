@@ -13,11 +13,13 @@ const ProfilePage = () => {
   const [fullName, setFullName] = useState('');
   const [language, setLanguage] = useState('english');
   const [saving, setSaving] = useState(false);
+  const [showPeerPulse, setShowPeerPulse] = useState(true);
 
   useEffect(() => {
     if (user) {
       setFullName(user.full_name || '');
       setLanguage(user.language_preference || 'english');
+  setShowPeerPulse(user.show_peer_pulse !== false);
     }
   }, [user]);
 
@@ -43,7 +45,7 @@ const ProfilePage = () => {
   const handleSave = async () => {
     try {
       setSaving(true);
-      await updateProfile({ full_name: fullName, language_preference: language });
+  await updateProfile({ full_name: fullName, language_preference: language, show_peer_pulse: showPeerPulse });
       await refresh();
     } finally {
       setSaving(false);
@@ -102,6 +104,18 @@ const ProfilePage = () => {
                     {language === 'english' ? 'English' : language === 'hindi' ? 'हिंदी' : 'ગુજરાતી'}
                   </p>
                 </div>
+              </div>
+              <div className="flex items-center justify-between border rounded-lg p-3">
+                <div>
+                  <p className="text-sm font-medium text-gray-800">Peer Pulse</p>
+                  <p className="text-[11px] text-gray-500">Show anonymous live peer activity % on home</p>
+                </div>
+                <label className="inline-flex items-center cursor-pointer">
+                  <input type="checkbox" className="sr-only" checked={showPeerPulse} onChange={e=>setShowPeerPulse(e.target.checked)} />
+                  <span className={`w-10 h-5 flex items-center bg-gray-300 rounded-full p-1 duration-200 ${showPeerPulse ? 'bg-indigo-500' : ''}`}>
+                    <span className={`bg-white w-4 h-4 rounded-full shadow transform duration-200 ${showPeerPulse ? 'translate-x-5' : ''}`}></span>
+                  </span>
+                </label>
               </div>
             </div>
           </div>

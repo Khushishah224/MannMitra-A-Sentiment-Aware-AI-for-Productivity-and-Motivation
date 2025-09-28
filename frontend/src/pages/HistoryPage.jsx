@@ -6,7 +6,8 @@ import MoodBadge from '../components/MoodBadge';
 import { useUser } from '../context/UserContext';
 import { format } from 'date-fns';
 import MoodHistoryChart from '../components/MoodHistoryChart';
-import { fetchMoodHistory } from '../api';
+import { fetchMoodHistory, getPlanCalendarHistory } from '../api';
+import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend } from 'recharts';
 
 const HistoryPage = () => {
   const { user, updateUserPreferences } = useUser();
@@ -52,6 +53,8 @@ const HistoryPage = () => {
   const [loading, setLoading] = useState(false);
   const [page, setPage] = useState(1);
   const pageSize = 6;
+  const [planAnalytics, setPlanAnalytics] = useState(null);
+  const [analyticsLoading, setAnalyticsLoading] = useState(false);
 
   useEffect(() => {
     let mounted = true;
@@ -75,6 +78,31 @@ const HistoryPage = () => {
     load();
     return () => { mounted = false; };
   }, []);
+
+  // Load plan analytics (last month) for completion & utilization trends
+  useEffect(()=>{
+    let active = true;
+    (async()=>{
+      setAnalyticsLoading(true);
+      try {
+        const now = new Date();
+        const res = await getPlanCalendarHistory(now.getMonth()+1, now.getFullYear());
+        if (!active) return;
+        // Transform into chart data sorted by date
+        const chartData = Object.entries(res.days||{}).sort((a,b)=>a[0].localeCompare(b[0])).map(([d, st]) => ({
+          date: d.slice(5),
+          taskRate: Math.round(st.completion_rate||0),
+          minutesRate: Math.round(st.minutes_completion_rate||0)
+        }));
+        setPlanAnalytics({ summary: res.summary, chartData });
+      } catch (_) {
+        if (active) setPlanAnalytics(null);
+      } finally {
+        if (active) setAnalyticsLoading(false);
+      }
+    })();
+    return ()=>{ active=false; };
+  },[]);
 
   const hasLocal = user.moodHistory && user.moodHistory.length > 0;
   const hasServer = serverHistory && serverHistory.length > 0;
@@ -114,6 +142,47 @@ const HistoryPage = () => {
                   <div className="w-2 h-2 bg-pink-500 rounded-full"></div>
                 </div>
                 <MoodHistoryChart data={serverHistory} />
+                <div className="mt-8">
+                  <h4 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+                    <span>Productivity Trend</span>
+                    <span className="text-[10px] text-gray-400">(Completion vs Minutes)</span>
+                  </h4>
+                  {analyticsLoading ? (
+                    <div className="text-xs text-gray-500">Loading analytics...</div>
+                  ) : planAnalytics?.chartData?.length ? (
+                    <div className="h-48">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <LineChart data={planAnalytics.chartData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                          <XAxis dataKey="date" tick={{ fontSize: 10 }} stroke="#94a3b8" />
+                          <YAxis domain={[0,100]} tick={{ fontSize: 10 }} stroke="#94a3b8" />
+                          <Tooltip wrapperStyle={{ fontSize: 11 }} />
+                          <Legend wrapperStyle={{ fontSize: 11 }} />
+                          <Line type="monotone" dataKey="taskRate" name="Tasks %" stroke="#6366f1" strokeWidth={2} dot={false} />
+                          <Line type="monotone" dataKey="minutesRate" name="Minutes %" stroke="#f43f5e" strokeWidth={2} dot={false} />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </div>
+                  ) : (
+                    <div className="text-xs text-gray-500">No task data this month.</div>
+                  )}
+                  {planAnalytics?.summary && (
+                    <div className="mt-3 grid grid-cols-2 gap-2 text-[11px] text-gray-600">
+                      <div className="p-2 rounded bg-white/60 border">
+                        <div className="font-semibold text-gray-700">Tasks</div>
+                        <div>{planAnalytics.summary.completed}/{planAnalytics.summary.total_tasks}</div>
+                      </div>
+                      <div className="p-2 rounded bg-white/60 border">
+                        <div className="font-semibold text-gray-700">Minutes</div>
+                        <div>{planAnalytics.summary.completed_minutes}/{planAnalytics.summary.total_planned_minutes}</div>
+                      </div>
+                      <div className="p-2 rounded bg-white/60 border col-span-2">
+                        <div className="font-semibold text-gray-700">Utilization</div>
+                        <div>{Math.round(planAnalytics.summary.overall_minutes_completion_rate||0)}% minutes • {Math.round(planAnalytics.summary.overall_completion_rate||0)}% tasks</div>
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           )}

@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import Header from '../components/Header';
 import AssistantChat from '../components/AssistantChat';
+import PeerPulseWidget from '../components/PeerPulseWidget';
 import LanguageSelector from '../components/LanguageSelector';
 import { useUser } from '../context/UserContext';
 import { AuthContext } from '../context/AuthContext';
@@ -56,7 +57,8 @@ const HomePage = () => {
         />
       </div>
       
-      <div className="max-w-md mx-auto">
+      <div className="max-w-md mx-auto space-y-4">
+  <PeerPulseWidget hidden={user?.show_peer_pulse === false} />
         <AnimatePresence mode="wait">
       {!planCreated ? (
             <motion.div

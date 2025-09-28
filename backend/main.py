@@ -31,7 +31,7 @@ app.add_middleware(
 )
 
 # Import routes
-from app.routes import mood, quote, planner, history, auth, plans, moods, suggestions, user_subjects, decision
+from app.routes import mood, quote, planner, history, auth, plans, moods, suggestions, user_subjects, decision, peerpulse
 from app.utils.database import db
 
 # Include routers
@@ -45,6 +45,7 @@ app.include_router(suggestions.router)  # Suggestions router
 app.include_router(user_subjects.router)  # User-specific subjects router
 app.include_router(history.router)
 app.include_router(decision.router)  # Decision helper router (Sprint 4)
+app.include_router(peerpulse.router)  # Peer Pulse (Sprint 5)
 
 # Automatically initialize default data during startup
 @app.on_event("startup")

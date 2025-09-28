@@ -2,7 +2,7 @@ from pymongo import MongoClient
 from bson import ObjectId
 from dotenv import load_dotenv
 import os
-from datetime import datetime, time
+from datetime import datetime, time, date
 from typing import List, Dict, Optional, Any, Union
 
 # Load environment variables
@@ -345,6 +345,9 @@ class Database:
         now = datetime.now()
         plan_data["created_at"] = now
         plan_data["updated_at"] = now
+        # Default scheduled_date to today if absent
+        if not plan_data.get("scheduled_date"):
+            plan_data["scheduled_date"] = date.today().isoformat()
         
         # Convert time object to string if present
         if "scheduled_time" in plan_data and isinstance(plan_data["scheduled_time"], time):
@@ -386,6 +389,9 @@ class Database:
             for plan in plans:
                 plan["id"] = str(plan["_id"])
                 del plan["_id"]
+                # Ensure scheduled_date present as ISO string
+                if not plan.get("scheduled_date"):
+                    plan["scheduled_date"] = date.today().isoformat()
                 
                 # Convert scheduled_time string back to time object if it exists
                 if "scheduled_time" in plan and isinstance(plan["scheduled_time"], str):
@@ -453,7 +459,7 @@ class Database:
         # Add updated timestamp
         update_data["updated_at"] = datetime.now()
         
-        # Normalize scheduled_time to HH:MM string for storage if provided
+    # Normalize scheduled_time to HH:MM string for storage if provided
         try:
             if "scheduled_time" in update_data and update_data["scheduled_time"] is not None:
                 st = update_data["scheduled_time"]
@@ -469,9 +475,16 @@ class Database:
             # Ensure enums or other non-serializable types are converted to primitives
             if "status" in update_data and hasattr(update_data["status"], "value"):
                 update_data["status"] = update_data["status"].value
+            # Normalize scheduled_date
+            if "scheduled_date" in update_data and update_data["scheduled_date"]:
+                if isinstance(update_data["scheduled_date"], date):
+                    update_data["scheduled_date"] = update_data["scheduled_date"].isoformat()
         except Exception as _:
             # If normalization fails, drop scheduled_time to avoid corrupt data
             update_data.pop("scheduled_time", None)
+
+        # Ensure scheduled_date exists for legacy records
+        update_data.setdefault("scheduled_date", date.today().isoformat())
         
         if self.is_connected():
             try:

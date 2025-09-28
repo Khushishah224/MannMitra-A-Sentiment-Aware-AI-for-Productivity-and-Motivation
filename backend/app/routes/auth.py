@@ -72,6 +72,7 @@ async def get_current_user(request: Request) -> User:
             email=user["email"],
             full_name=user["full_name"],
             language_preference=user["language_preference"],
+            show_peer_pulse=user.get("show_peer_pulse", True),
             created_at=user["created_at"],
             updated_at=user["updated_at"]
         )
@@ -107,7 +108,8 @@ async def register_user(user_data: UserCreate):
         "email": user_data.email,
         "full_name": user_data.full_name,
         "language_preference": user_data.language_preference,
-        "hashed_password": hashed_password
+        "hashed_password": hashed_password,
+        "show_peer_pulse": True
     }
     
     created_user = db.create_user(user_dict)
@@ -123,6 +125,7 @@ async def register_user(user_data: UserCreate):
         email=created_user["email"],
         full_name=created_user["full_name"],
         language_preference=created_user["language_preference"],
+        show_peer_pulse=created_user.get("show_peer_pulse", True),
         created_at=created_user["created_at"],
         updated_at=created_user["updated_at"]
     )
@@ -227,6 +230,7 @@ async def update_current_user(
         email=updated_user["email"],
         full_name=updated_user["full_name"],
         language_preference=updated_user["language_preference"],
+        show_peer_pulse=updated_user.get("show_peer_pulse", True),
         created_at=updated_user["created_at"],
         updated_at=updated_user["updated_at"]
     )

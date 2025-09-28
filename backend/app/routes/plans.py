@@ -25,6 +25,57 @@ router = APIRouter(
     },
 )
 
+@router.get("/history/calendar")
+async def get_calendar_history(
+    current_user: Annotated[User, Depends(get_current_user)],
+    month: Optional[int] = None,
+    year: Optional[int] = None
+):
+    """Return aggregated plan stats grouped by scheduled_date (calendar view).
+    If month & year provided, filter to that month; otherwise return all.
+    Output: { days: { 'YYYY-MM-DD': { total, completed, pending, missed, completion_rate } }, summary: {...} }
+    """
+    plans = db.get_user_plans(current_user.id)
+    days: dict[str, dict] = {}
+    for p in plans:
+        day = p.get('scheduled_date')
+        if not day:
+            continue
+        if month and year:
+            if not (day.startswith(f"{year:04d}-{month:02d}")):
+                continue
+        drec = days.setdefault(day, { 'total':0, 'completed':0, 'missed':0, 'pending':0, 'planned_minutes':0, 'completed_minutes':0 })
+        drec['total'] += 1
+        status = p.get('status')
+        dur = int(p.get('duration_minutes') or 0)
+        drec['planned_minutes'] += dur
+        if status == 'completed':
+            drec['completed'] += 1
+            drec['completed_minutes'] += dur
+        elif status == 'missed':
+            drec['missed'] += 1
+        else:
+            drec['pending'] += 1
+    # compute per-day completion rate
+    for d,v in days.items():
+        v['completion_rate'] = (v['completed']/v['total']*100) if v['total'] else 0
+        v['minutes_completion_rate'] = (v['completed_minutes']/v['planned_minutes']*100) if v['planned_minutes'] else 0
+    # overall summary
+    total = sum(v['total'] for v in days.values()) or 0
+    completed = sum(v['completed'] for v in days.values())
+    total_planned = sum(v['planned_minutes'] for v in days.values()) or 0
+    total_completed_minutes = sum(v['completed_minutes'] for v in days.values()) or 0
+    summary = {
+        'days_count': len(days),
+        'total_tasks': total,
+        'completed': completed,
+        'overall_completion_rate': (completed/total*100) if total else 0,
+        'total_planned_minutes': total_planned,
+        'completed_minutes': total_completed_minutes,
+        'overall_minutes_completion_rate': (total_completed_minutes/total_planned*100) if total_planned else 0
+    }
+    return { 'days': days, 'summary': summary }
+
 def _parse_hhmm_to_minutes(value) -> int | None:
     try:
         if value is None:

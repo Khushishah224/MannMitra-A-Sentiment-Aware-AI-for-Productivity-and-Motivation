@@ -198,6 +198,41 @@ export const snoozePlan = async (planId, minutes = 10) => {
   }
 };
 
+// Calendar history analytics
+export const getPlanCalendarHistory = async (month = null, year = null) => {
+  try {
+    const params = new URLSearchParams();
+    if (month) params.append('month', month);
+    if (year) params.append('year', year);
+    const qs = params.toString() ? `?${params.toString()}` : '';
+    const res = await apiClient.get(`/plans/history/calendar${qs}`);
+    return res.data;
+  } catch (e) {
+    console.error('Error fetching calendar history', e);
+    return { days: {}, summary: {} };
+  }
+};
+
+// Peer Pulse API
+export const submitPeerPulse = async (activity, mood=null) => {
+  try {
+    const res = await apiClient.post('/peerpulse', { activity, mood });
+    return res.data;
+  } catch (e) {
+    return Promise.reject(e);
+  }
+};
+
+export const getPeerPulse = async (windowMinutes=30) => {
+  try {
+    const res = await apiClient.get(`/peerpulse?window_minutes=${windowMinutes}`);
+    return res.data;
+  } catch (e) {
+    console.error('Peer pulse fetch failed', e);
+    return { distribution: {}, total: 0, mood_distribution: {} };
+  }
+};
+
 export const setPlanReminder = async (planId, leadMinutes) => {
   try {
     const response = await apiClient.post(`/plans/${planId}/reminder`, null, { params: { lead_minutes: leadMinutes } });
@@ -217,6 +252,7 @@ export const deletePlan = async (planId) => {
     throw error;
   }
 };
+
 
 export const getMoodHistory = async (userId) => {
   try {

@@ -1,6 +1,6 @@
 from pydantic import BaseModel, Field
 from typing import Optional, List
-from datetime import datetime, time
+from datetime import datetime, time, date
 from enum import Enum
 
 class PlanCategory(str, Enum):
@@ -27,6 +27,8 @@ class PlanBase(BaseModel):
     # Optional reminder lead time in minutes (fire reminder lead minutes before scheduled_time)
     reminder_lead_minutes: Optional[int] = Field(default=None, ge=0, le=120)
     auto_rescheduled: Optional[bool] = False
+    # New: calendar date for the plan (defaults to today if not provided)
+    scheduled_date: Optional[date] = None
 
 class PlanCreate(PlanBase):
     user_id: Optional[str] = None
@@ -46,6 +48,7 @@ class PlanUpdate(BaseModel):
     scheduled_time: Optional[time] = None
     reminder_lead_minutes: Optional[int] = Field(default=None, ge=0, le=120)
     auto_rescheduled: Optional[bool] = None
+    scheduled_date: Optional[date] = None
 
 class PlanInDB(PlanBase):
     id: str

@@ -1,7 +1,7 @@
 from typing import Dict, List, Any
 import os
 import json
-from datetime import datetime
+from datetime import datetime, date
 from app.utils.database import db
 
 # Default quotes are already in the quotes.json file
@@ -503,6 +503,7 @@ def insert_all_defaults():
                     "status": "completed",
                     "user_id": user_id,
                     "scheduled_time": past_hh + ":" + past_mm,
+                    "scheduled_date": past_time.date().isoformat(),
                     "created_at": past_time,
                     "updated_at": past_time
                 },
@@ -514,6 +515,7 @@ def insert_all_defaults():
                     "status": "completed",
                     "user_id": user_id,
                     "scheduled_time": yesterday_hh + ":" + yesterday_mm,
+                    "scheduled_date": yesterday.date().isoformat(),
                     "created_at": yesterday,
                     "updated_at": yesterday
                 },
@@ -527,6 +529,7 @@ def insert_all_defaults():
                     "status": "pending",
                     "user_id": user_id,
                     "scheduled_time": missed_hh + ":" + missed_mm,
+                    "scheduled_date": missed_time.date().isoformat(),
                     "created_at": missed_time,
                     "updated_at": missed_time
                 },
@@ -538,6 +541,7 @@ def insert_all_defaults():
                     "status": "snoozed",
                     "user_id": user_id,
                     "scheduled_time": snoozed_hh + ":" + snoozed_mm,
+                    "scheduled_date": snoozed_time.date().isoformat(),
                     "created_at": snoozed_time,
                     "updated_at": snoozed_time
                 },
@@ -551,6 +555,7 @@ def insert_all_defaults():
                     "status": "pending",
                     "user_id": user_id,
                     "scheduled_time": future_hh + ":" + future_mm,
+                    "scheduled_date": future_time.date().isoformat(),
                     "created_at": now,
                     "updated_at": now
                 },
@@ -562,6 +567,7 @@ def insert_all_defaults():
                     "status": "pending",
                     "user_id": user_id,
                     "scheduled_time": tomorrow_hh + ":" + tomorrow_mm,
+                    "scheduled_date": tomorrow.date().isoformat(),
                     "created_at": now,
                     "updated_at": now
                 }
@@ -571,6 +577,88 @@ def insert_all_defaults():
                     db.create_plan(sp)
                 except Exception:
                     pass
+
+            # Seed peer pulse sample data if empty
+            try:
+                if db.is_connected():
+                    peerpulse_coll = getattr(db, 'peerpulse', None) or db.db.peerpulse
+                    if peerpulse_coll.count_documents({}) == 0:
+                        from datetime import timedelta
+                        now_ts = datetime.now()
+                        samples = [
+                            { 'activity': 'studying', 'mood': 'focused' },
+                            { 'activity': 'studying', 'mood': 'motivated' },
+                            { 'activity': 'working', 'mood': 'productive' },
+                            { 'activity': 'working', 'mood': 'stressed' },
+                            { 'activity': 'chilling', 'mood': 'relaxed' },
+                            { 'activity': 'studying', 'mood': 'tired' },
+                        ]
+                        docs = []
+                        for i, s in enumerate(samples):
+                            docs.append({
+                                'user_hash': f'default_seed_{i}',
+                                'activity': s['activity'],
+                                'mood': s['mood'],
+                                'created_at': now_ts - timedelta(minutes=5*i)
+                            })
+                        peerpulse_coll.insert_many(docs)
+                        db.peerpulse = peerpulse_coll
+                        print("Seeded default peer pulse samples")
+                else:
+                    if not hasattr(db, 'peerpulse_mem') or len(getattr(db, 'peerpulse_mem')) == 0:
+                        from datetime import timedelta
+                        now_ts = datetime.now()
+                        db.peerpulse_mem = []
+                        samples = [
+                            { 'activity': 'studying', 'mood': 'focused' },
+                            { 'activity': 'working', 'mood': 'productive' },
+                            { 'activity': 'chilling', 'mood': 'relaxed' }
+                        ]
+                        for i, s in enumerate(samples):
+                            db.peerpulse_mem.append({
+                                'user_hash': f'default_seed_{i}',
+                                'activity': s['activity'],
+                                'mood': s['mood'],
+                                'created_at': now_ts
+                            })
+                        print("Seeded in-memory peer pulse samples")
+            except Exception as se:
+                print(f"Peer pulse seed error: {se}")
+
+            # Backfill any legacy plans missing scheduled_date
+            try:
+                if db.is_connected():
+                    cursor = db.plans.find({"scheduled_date": {"$exists": False}})
+                    count = 0
+                    for doc in cursor:
+                        created = doc.get("created_at")
+                        if isinstance(created, datetime):
+                            sched_date = created.date().isoformat()
+                        else:
+                            sched_date = date.today().isoformat()
+                        db.plans.update_one({"_id": doc["_id"]}, {"$set": {"scheduled_date": sched_date}})
+                        count += 1
+                    if count:
+                        print(f"Backfilled scheduled_date on {count} legacy plan documents.")
+                else:
+                    # In-memory structure: db.plans is dict -> user_id -> list[plan]
+                    try:
+                        total = 0
+                        for plist in db.plans.values():
+                            for p in plist:
+                                if 'scheduled_date' not in p:
+                                    created = p.get('created_at')
+                                    if isinstance(created, datetime):
+                                        p['scheduled_date'] = created.date().isoformat()
+                                    else:
+                                        p['scheduled_date'] = date.today().isoformat()
+                                    total += 1
+                        if total:
+                            print(f"Backfilled scheduled_date for {total} in-memory plans.")
+                    except Exception:
+                        pass
+            except Exception:
+                pass
     except Exception as _:
         pass
 
