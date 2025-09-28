@@ -112,7 +112,7 @@ ACCESS_TOKEN_EXPIRE_MINUTES=30
 
 **User:** "I'm feeling useless and tired right now."  
 **MannMitra:**  
-“Thak gaye ho? Chalo 15 mins ke liye OS revise karein. Kal ka hero banoge.”  
+“How about turning this ordinary day into something special?"   
 📝 Task: Revise OS unit 2  
 🕒 Start at 7:00 PM?
 
