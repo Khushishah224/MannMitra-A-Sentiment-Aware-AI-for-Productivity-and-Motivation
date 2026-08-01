@@ -30,7 +30,13 @@ apiClient.interceptors.response.use(
   (error) => {
     const status = error?.response?.status;
     if (status === 401 || status === 403) {
+      const hadToken = !!localStorage.getItem('token');
       try { localStorage.removeItem('token'); } catch {}
+      if (hadToken && typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('auth:unauthorized', {
+          detail: error?.response?.data?.detail || 'Unauthorized'
+        }));
+      }
     }
     return Promise.reject(error);
   }

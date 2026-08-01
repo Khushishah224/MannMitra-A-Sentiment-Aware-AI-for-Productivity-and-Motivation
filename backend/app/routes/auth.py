@@ -76,7 +76,13 @@ async def get_current_user(request: Request) -> User:
             created_at=user["created_at"],
             updated_at=user["updated_at"]
         )
-    except JWTError:
+    except JWTError as exc:
+        if str(exc) == "Token expired":
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Session expired. Please log in again.",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
         raise credentials_exception
 
 @router.post("/register", response_model=User)

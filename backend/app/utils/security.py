@@ -1,5 +1,6 @@
 from passlib.context import CryptContext
 from jose import jwt, JWTError
+from jose.exceptions import ExpiredSignatureError
 from datetime import datetime, timedelta
 from typing import Optional
 from pydantic import EmailStr
@@ -15,7 +16,17 @@ load_dotenv()
 # JWT Configuration
 SECRET_KEY = os.getenv("JWT_SECRET_KEY", "dev-secret-key-change-me")
 ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
-ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
+
+def _resolve_access_token_expiry_minutes(default_minutes: int = 30, min_minutes: int = 10) -> int:
+    """Resolve JWT expiry from env with safe fallback and lower bound."""
+    raw_value = os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", str(default_minutes)).strip()
+    try:
+        parsed = int(raw_value)
+    except ValueError:
+        return default_minutes
+    return parsed if parsed >= min_minutes else default_minutes
+
+ACCESS_TOKEN_EXPIRE_MINUTES = _resolve_access_token_expiry_minutes()
 
 # Password hashing context
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -87,5 +98,7 @@ def decode_token(token: str) -> TokenData:
             raise JWTError("Invalid token payload")
         token_data = TokenData(email=email, user_id=user_id)
         return token_data
+    except ExpiredSignatureError:
+        raise JWTError("Token expired")
     except JWTError:
         raise JWTError("Could not validate credentials")

@@ -20,6 +20,15 @@ export const AuthProvider = ({ children }) => {
     } else {
       setIsLoading(false);
     }
+
+    const handleUnauthorized = () => {
+      setUser(null);
+      setIsAuthenticated(false);
+      toast.error('Session expired. Please log in again.');
+    };
+
+    window.addEventListener('auth:unauthorized', handleUnauthorized);
+    return () => window.removeEventListener('auth:unauthorized', handleUnauthorized);
   }, []);
   
   // Fetch current user data
