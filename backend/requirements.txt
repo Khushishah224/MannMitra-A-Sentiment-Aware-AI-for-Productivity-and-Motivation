@@ -9,28 +9,5 @@ passlib==1.7.4
 bcrypt==4.3.0
 email-validator==2.2.0
 python-multipart==0.0.20
-
-# Sprint 3 - Empathy Layer dependencies
-transformers==4.55.4
-tokenizers==0.21.4
-torch==2.8.0
-accelerate==0.25.0
-huggingface-hub==0.34.4
-
-# Sprint 4 - Decision Helper dependencies
-scikit-fuzzy==0.4.2
-numpy==2.3.2
-scipy==1.16.1
-
-# NLP dependencies
-nltk==3.9.1
-regex==2025.7.34
-
-# Additional dependencies
-setuptools==80.9.0
-filelock==3.19.1
-tqdm==4.67.1
 requests==2.32.5
-PyYAML==6.0.2
-safetensors==0.6.2
-joblib==1.5.1
+nltk==3.9.1

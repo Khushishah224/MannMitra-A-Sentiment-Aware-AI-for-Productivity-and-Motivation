@@ -24,6 +24,11 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
+Optional (local full ML + fuzzy features):
+```
+pip install -r requirements.txt -r requirements-ml-local.txt
+```
+
 4. Create a .env file in the backend directory with the following content:
 ```
 MONGODB_URI=mongodb://localhost:27017/mannmitra

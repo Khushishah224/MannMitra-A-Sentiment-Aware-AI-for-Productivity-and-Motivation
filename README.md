@@ -72,6 +72,12 @@ pip install -r requirements.txt
 python -m uvicorn main:app --reload
 ```
 
+For local development with full transformer + fuzzy features, install optional extras too:
+
+```bash
+pip install -r requirements.txt -r requirements-ml-local.txt
+```
+
 The database will be automatically initialized with default data when the application starts.
 
 #### Default Users for Testing
@@ -105,6 +111,17 @@ JWT_SECRET_KEY=your-secret-key-here
 JWT_ALGORITHM=HS256
 ACCESS_TOKEN_EXPIRE_MINUTES=30
 ```
+
+### ▲ Vercel Deployment Note (Python Function Size)
+
+Vercel Python serverless functions have a bundle size limit. To keep deployment under the limit:
+
+1. Keep `backend/requirements.txt` as the slim production set.
+2. Put heavyweight local-only packages in `backend/requirements-ml-local.txt`.
+3. In Vercel Environment Variables, set `DISABLE_LOCAL_HF=1`.
+4. Optionally set `HUGGINGFACE_API_TOKEN` if you want remote Hugging Face inference.
+
+This project automatically falls back to lightweight sentiment/heuristic logic when local heavy ML packages are unavailable.
 
 ---
 
