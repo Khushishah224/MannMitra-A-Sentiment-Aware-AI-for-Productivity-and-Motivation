@@ -9,7 +9,7 @@ import CustomSubjectForm from '../components/CustomSubjectForm';
 import TaskForm from '../components/TaskForm';
 import { useUser } from '../context/UserContext';
 import { AuthContext } from '../context/AuthContext';
-import { createPlan, getUserPlans, updatePlan } from '../api';
+import { apiClient, createPlan, getUserPlans, updatePlan } from '../api';
 import { hasOverlap as utilHasOverlap, computeNextFree as utilComputeNextFree, computeChainShifts, applyChainShifts } from '../utils/timeConflicts';
 import { FaPlus, FaRegLightbulb, FaFilter, FaTags, FaTimes } from 'react-icons/fa';
 import toast from 'react-hot-toast';
@@ -264,7 +264,12 @@ const PlannerPage = () => {
         ...(createStartTime ? { scheduled_time: createStartTime } : {})
       });
   // Fire and forget peer pulse representing current activity
-  try { fetch(`${import.meta.env.VITE_BACKEND_BASE_URL || 'http://localhost:8000'}/peerpulse`, { method:'POST', headers:{'Content-Type':'application/json', 'Authorization': `Bearer ${localStorage.getItem('token')||''}`}, body: JSON.stringify({ activity: newTask.category, mood: 'focused' }) }); } catch(_) {}
+  try {
+    await apiClient.post('/peerpulse', {
+      activity: newTask.category,
+      mood: 'focused'
+    });
+  } catch(_) {}
       toast.success('Task created successfully!');
       setIsCreating(false);
       setNewTask({ title: '', description: '', category: 'study', duration_minutes: 30 });

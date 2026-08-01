@@ -1,8 +1,10 @@
 import axios from 'axios';
 
+const normalizeBaseURL = (value) => (value || 'http://localhost:8000').replace(/\/+$/, '');
+
 // Create axios instance with base URL
 export const apiClient = axios.create({
-  baseURL: import.meta.env.VITE_BACKEND_BASE_URL || 'http://localhost:8000',
+  baseURL: normalizeBaseURL(import.meta.env.VITE_BACKEND_BASE_URL),
   headers: {
     'Content-Type': 'application/json',
   },
@@ -313,7 +315,7 @@ export const login = async (email, password) => {
     const formData = new URLSearchParams();
     formData.append('username', email);
     formData.append('password', password);
-    const response = await axios.post(`${apiClient.defaults.baseURL}/auth/token`, formData, {
+    const response = await apiClient.post('/auth/token', formData, {
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
     });
     
