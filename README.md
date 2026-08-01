@@ -129,6 +129,25 @@ ACCESS_TOKEN_EXPIRE_MINUTES=30
 
 ---
 
+## 🖼️ Screenshots & Glimpses
+
+### Home / Mood Input
+![MannMitra Home Screen](media/image_1.png)
+
+### Decision Helper
+![MannMitra Decision Helper](media/image_11.png)
+
+### Mood History
+![MannMitra Mood History](media/image_12.png)
+
+### Planner View
+![MannMitra Task Planner](media/image_13.png)
+
+### More Glimpses
+Additional screenshots are available in the `media/` folder.
+
+---
+
 ## 🔮 Future Enhancements (Shortlist)
 
 - 🎙️ Voice input (speech-to-text)
