@@ -69,7 +69,7 @@ cd backend
 python -m venv venv
 source venv/bin/activate   # or venv\Scripts\activate on Windows
 pip install -r requirements.txt
-uvicorn main:app --reload
+python -m uvicorn main:app --reload
 ```
 
 The database will be automatically initialized with default data when the application starts.
